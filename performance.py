@@ -31,6 +31,10 @@ class VideoStream:
     """Threaded Video Stream to prevent IO blocking and reduce input lag."""
     def __init__(self, src=0):
         self.stream = cv2.VideoCapture(src)
+        # optimize for speed
+        self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        # self.stream.set(cv2.CAP_PROP_FPS, 30) # Optional: Force 30FPS if supported
         (self.grabbed, self.frame) = self.stream.read()
         self.stopped = False
 
