@@ -47,7 +47,7 @@ def save_config(data):
     with open(CONFIG_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-def run_process(script_name):
+def run_process(script_name, capture_output=False):
     """Runs a script in a subprocess and streams output."""
     cmd = [PYTHON_EXE, script_name]
     
@@ -56,14 +56,17 @@ def run_process(script_name):
         st.error(f"File not found: {script_name}")
         return
 
-    return subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == 'win32' else 0
-    )
+    kwargs = {
+        'creationflags': subprocess.CREATE_NEW_CONSOLE if sys.platform == 'win32' else 0,
+        'text': True
+    }
+
+    if capture_output:
+        kwargs['stdout'] = subprocess.PIPE
+        kwargs['stderr'] = subprocess.STDOUT
+        kwargs['bufsize'] = 1
+
+    return subprocess.Popen(cmd, **kwargs)
 
 # --- Sidebar: Configuration ---
 st.sidebar.header("⚙️ Configuration")
@@ -98,22 +101,29 @@ if st.sidebar.button("Reset Config (Default)"):
     time.sleep(1)
     st.rerun()
 
+st.sidebar.markdown("---")
+if st.sidebar.button("🔄 Restart Dashboard", type="primary"):
+    st.sidebar.warning("Restarting...")
+    time.sleep(1)
+    # Reload the streamlit process
+    os.execv(sys.executable, [sys.executable, "-m", "streamlit", "run", "app.py"])
+
 # --- Main Dashboard ---
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.header("1. Capture Data")
-    st.write("Record hand landmarks for your defined gestures.")
-    if st.button("📷 Start Data Collection", type="primary"):
-        st.info("Launching 'collect_data.py'... Check the new window.")
-        run_process("collect_data.py")
+    st.header("1. Capture")
+    st.write("Record data.")
+    if st.button("📷 Collect Data", key="btn_collect", type="primary"):
+        st.info("Running collect_data.py in new terminal...")
+        run_process("collect_data.py", capture_output=False)
 
 with col2:
-    st.header("2. Train Model")
-    st.write("Train the Neural Network on collected data.")
-    if st.button("🧠 Start Training"):
-        with st.status("Training Model...", expanded=True) as status:
+    st.header("2. Train")
+    st.write("Train model.")
+    if st.button("🧠 Train Model", key="btn_train"):
+        with st.status("Training...", expanded=True) as status:
             process = subprocess.Popen(
                 [PYTHON_EXE, "train_model.py"],
                 stdout=subprocess.PIPE,
@@ -122,7 +132,6 @@ with col2:
             )
             output_container = st.empty()
             full_logs = ""
-            
             while True:
                 line = process.stdout.readline()
                 if not line and process.poll() is not None:
@@ -130,28 +139,76 @@ with col2:
                 if line:
                     full_logs += line
                     output_container.code(line.strip(), language="text")
-            
             if process.returncode == 0:
-                status.update(label="Training Complete!", state="complete", expanded=False)
-                st.success("Model Saved: gesture_model.h5")
+                status.update(label="Done!", state="complete", expanded=False)
+                st.success("Saved: gesture_model.h5")
             else:
-                status.update(label="Training Failed", state="error")
+                status.update(label="Failed", state="error")
                 st.error("Check logs.")
 
 with col3:
-    st.header("3. Run Control")
-    st.write("Start the real-time control system.")
-    if st.button("🚀 Start System", type="primary"):
-        st.info("System Running. Press 'q' in the camera window to stop.")
-        run_process("main.py")
+    st.header("3. Test")
+    st.write("Debug detection.")
+    if st.button("🧪 Test Model", key="btn_test"):
+        st.info("Running test_gesture.py in new terminal...")
+        run_process("test_gesture.py", capture_output=False)
+
+# --- Session State for Process Management ---
+if 'system_pid' not in st.session_state:
+    st.session_state['system_pid'] = None
+
+with col4:
+    st.header("4. Run")
+    st.write("Control System.")
+    
+    # Check if running
+    is_running = st.session_state['system_pid'] is not None
+    
+    if not is_running:
+        if st.button("🚀 Start System", key="btn_start", type="primary"):
+            st.info("Starting main.py...")
+            proc = run_process("main.py", capture_output=False)
+            if proc:
+                st.session_state['system_pid'] = proc.pid
+                st.rerun()
+    else:
+        st.success(f"System Running (PID: {st.session_state['system_pid']})")
+        
+        if st.button("⏹ Stop System"):
+            try:
+                os.kill(st.session_state['system_pid'], 9) # Force kill
+                st.session_state['system_pid'] = None
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error stopping: {e}")
+                st.session_state['system_pid'] = None # Reset anyway
+        
+        if st.button("🔄 Restart System"):
+             try:
+                os.kill(st.session_state['system_pid'], 9)
+                time.sleep(1)
+                proc = run_process("main.py", capture_output=False)
+                if proc:
+                    st.session_state['system_pid'] = proc.pid
+                st.rerun()
+             except Exception as e:
+                st.error(f"Error restarting: {e}")
 
 # --- Logs Section ---
 st.divider()
-st.subheader("📋 System Actions")
-with st.expander("Show Instructions"):
+st.subheader("📋 Guide & Instructions")
+with st.expander("Show Detailed Guide", expanded=True):
     st.markdown("""
-    1.  **Add Gestures** in the sidebar if needed.
-    2.  **Collect Data**: Click 'Start Data Collection'. A window will open. Press keys **0-N** to record. Press **q** to quit.
-    3.  **Train Model**: Click 'Start Training'. Wait for it to finish.
-    4.  **Run System**: Click 'Start System'. Control your PC!
+    ### 🖐 Recommended Hand Shapes (Updated)
+    1.  **Volume (0)**: **Pinch (👌)**. Index + Thumb closed. Move Hand UP/DOWN.
+    2.  **Bright_Up (1)**: **Thumb Up (👍)**. Hand closed with Thumb UP.
+    3.  **Bright_Down (2)**: **Thumb Down (👎)**. Hand closed with Thumb DOWN.
+    4.  **Show_Desktop (3)**: **Rock (🤘)** or **Thumb + 2 Fingers**.
+    5.  **Idle (4)**: **Relaxed Hand / Random Motion**.
+
+    ### 📝 Workflow
+    1.  **Collect Data**: Click 'Collect Data'. Record ~1000 frames for EACH gesture above.
+    2.  **Train Model**: Click 'Train Model'.
+    3.  **Test**: Use 'Test Model' to verify recognition.
+    4.  **Run**: Click 'Start System'.
     """)

@@ -11,12 +11,20 @@ from mediapipe.tasks.python import vision
 # Local imports
 from utils import normalize_landmarks
 
+import json
+import os
+
 # Config
+CONFIG_FILE = 'gestures_config.json'
+try:
+    with open(CONFIG_FILE, 'r') as f:
+        config = json.load(f)
+        LABELS = config.get("gestures", [])
+except Exception as e:
+    print(f"Error loading config: {e}")
+    LABELS = ["Volume", "Bright_Up", "Bright_Down", "Show_Desktop"]
+
 MODEL_FILE = 'gesture_model.h5'
-# Labels MUST match train_model.py encoding
-# The original LABELS list is kept as it's used for display,
-# and new CLASSES and COLORS are introduced for potential future use or specific visualization.
-LABELS = ["Volume (0)", "Bright UP (1)", "Bright DOWN (2)", "Idle (3)"]
 
 def main():
     print("Loading model...") # Load Model
@@ -28,9 +36,14 @@ def main():
         return
 
     # Updated Classes
-    CLASSES = ['Volume', 'Brightness_Up', 'Brightness_Down', 'Show_Desktop', 'Idle']
-    COLORS = [(0, 255, 0), (0, 255, 255), (255, 255, 0), (255, 0, 255), (0, 0, 255)] 
-    # Green, Cyan, Yellow, Magenta, Red
+    # Updated Classes dynamically loaded
+    # COLORS for visualization
+    import random
+    random.seed(42)
+    COLORS = []
+    for _ in range(len(LABELS)):
+        COLORS.append((random.randint(0,255), random.randint(0,255), random.randint(0,255)))
+    COLORS.append((200, 200, 200)) # Extra for Idle/Unknown
 
     # Initialize MediaPipe
     base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')

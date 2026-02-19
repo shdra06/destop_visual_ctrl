@@ -73,8 +73,17 @@ def main():
         print("--- GESTURE DATA COLLECTION ---")
         print(f"Press keys 0-{len(CLASSES)-1} to record {SAMPLES_PER_CLASS} samples per class:")
         
+        SUGGESTED_POSES = {
+            "Volume": "Pinch (👌) (Index+Thumb Closed)",
+            "Bright_Up": "Thumb Up (👍) (Hand Closed)",
+            "Bright_Down": "Thumb Down (👎) (Hand Closed)",
+            "Show_Desktop": "Rock (🤘) / Thumb + 2 Fingers",
+            "Idle": "No Command / Random Motion / Resting (🚫)"
+        }
+
         for i, gesture in enumerate(CLASSES):
-            print(f"  [{i}] {gesture}")
+            desc = SUGGESTED_POSES.get(gesture, "Custom Pose")
+            print(f"  [{i}] {gesture}: {desc}")
             
         print("Press 'q' to quit.")
         

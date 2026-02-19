@@ -3,6 +3,7 @@
         "Volume",
         "Bright_Up",
         "Bright_Down",
-        "Show_Desktop"
+        "Show_Desktop",
+        "Idle"
     ]
 }

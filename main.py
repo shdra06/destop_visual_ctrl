@@ -25,8 +25,21 @@ try:
 except Exception as e:
     CLASSES = ['Volume', 'Bright_Up', 'Bright_Down', 'Show_Desktop']
 
+# Resolve Class Indices dynamically
+def get_class_index(name):
+    try:
+        return CLASSES.index(name)
+    except ValueError:
+        return -999 # Distinct invalid index
+
+VOL_ID = get_class_index("Volume")
+B_UP_ID = get_class_index("Bright_Up")
+B_DOWN_ID = get_class_index("Bright_Down")
+DESK_ID = get_class_index("Show_Desktop")
+IDLE_ID = get_class_index("Idle")
+
 MODEL_FILE = 'gesture_model.h5'
-CONFIDENCE_THRESHOLD = 0.8  # Higher threshold for stability
+CONFIDENCE_THRESHOLD = 0.9  # Higher threshold for stability
 MOVEMENT_THRESHOLD = 0.02 # Sensitivity for Volume movement
 SMOOTHING_BUFFER = 5
 
@@ -148,27 +161,31 @@ def main():
     
     # Timer Durations (Dynamic)
     def get_hold_duration(class_id):
-        # 0: Volume -> 1.5s
-        if class_id == 0: return 1.5
-        # 1: Bright Up -> 0.75s
-        if class_id == 1: return 0.75
-        # 2: Bright Down -> 0.75s
-        if class_id == 2: return 0.75
-        # 3: Show Desktop -> 0.0s (Instant)
-        if class_id == 3: return 0.0
-        # Default -> 1.5s
-        return 1.5
+        if class_id == VOL_ID: return 1.0
+        if class_id == B_UP_ID: return 0.5
+        if class_id == B_DOWN_ID: return 0.5
+        if class_id == DESK_ID: return 1.0 # User changed to 1.5s
+        return 1.0
+
+    # Confidence Thresholds (Dynamic)
+    def get_confidence_threshold(class_id):
+        if class_id == VOL_ID: return 0.8
+        if class_id == B_UP_ID: return 0.9
+        if class_id == B_DOWN_ID: return 0.9
+        if class_id == DESK_ID: return 0.9
+        if class_id == IDLE_ID: return 0.8
+        return 0.8
 
     last_brightness_update = 0 
     last_volume_update = 0
     last_desktop_toggle = 0
     
     print("Starting gesture control...")
-    print("Hold Durations: Vol=1.5s, Bright=0.75s, Desktop=Instant")
+    print("Hold Durations: Vol=1.0s, Bright=0.5s, Desktop=1.0s")
     print("Commands:")
     for i, gesture in enumerate(CLASSES):
         print(f"  - {gesture} (Class {i})")
-    print("  - Low Confidence -> Idle")
+    print("  - Low Confidence -> Idle (-1)")
     print("Press 'q' to quit.")
 
     while cap.isOpened():
@@ -205,18 +222,22 @@ def main():
             class_id = np.argmax(prediction)
             confidence = prediction[0][class_id]
             
-            # 0=Vol, 1=B_Up, 2=B_Down, 3=Desktop
-            if confidence > CONFIDENCE_THRESHOLD:
+            # Use dynamic threshold
+            threshold = get_confidence_threshold(class_id)
+            
+            if confidence > threshold:
                 gesture_buffer.append(class_id)
             else:
-                gesture_buffer.append(4) # Internal "Idle" state
+                gesture_buffer.append(-1) # Low confidence state
             
             # Majority Voting
             if len(gesture_buffer) == SMOOTHING_BUFFER:
                 detected_state = max(set(gesture_buffer), key=gesture_buffer.count)
                 
                 # State Machine
-                if detected_state != 4: # If NOT Idle
+                # -1: Low Confidence
+                # IDLE_ID: Explicit Idle Class
+                if detected_state != -1 and detected_state != IDLE_ID: # If NOT Low Conf AND NOT Explicit Idle
                     if detected_state == current_gesture_state:
                         # Holding same gesture
                         elapsed = time.time() - gesture_hold_start_time
@@ -255,8 +276,8 @@ def main():
                 if is_active:
                     color = (0, 255, 0) # Green
                     
-                    # Class 0: Volume Mode (Pinch & Drag)
-                    if current_gesture_state == 0:
+                    # Volume Control
+                    if current_gesture_state == VOL_ID:
                         gesture_text = "ACTIVE: Volume Mode (Move UP/DOWN)"
                         
                         current_y = hand_landmarks[8].y # Index tip
@@ -294,26 +315,33 @@ def main():
                                     last_volume_update = time.time()
                         prev_y = current_y
 
-                    # Class 1: Brightness UP
-                    elif current_gesture_state == 1:
+                    # Brightness UP
+                    elif current_gesture_state == B_UP_ID:
                         gesture_text = "ACTIVE: Bright UP"
                         if time.time() - last_brightness_update > 0.5: 
                             change_brightness_step(1)
                             last_brightness_update = time.time()
 
-                    # Class 2: Brightness DOWN
-                    elif current_gesture_state == 2:
+                    # Brightness DOWN
+                    elif current_gesture_state == B_DOWN_ID:
                         gesture_text = "ACTIVE: Bright DOWN"
                         if time.time() - last_brightness_update > 0.5:
                             change_brightness_step(-1)
                             last_brightness_update = time.time()
 
-                    # Class 3: Show Desktop
-                    elif current_gesture_state == 3:
+                    # Show Desktop
+                    elif current_gesture_state == DESK_ID:
                         gesture_text = "ACTIVE: Show Desktop"
                         if time.time() - last_desktop_toggle > 2.0: # Debounce
-                            # Toggle Desktop via Win+D shortcut (More reliable than Shell.Application)
-                            pyautogui.hotkey('win', 'd')
+                            # Toggle Desktop via ctypes keybd_event (Global / Background-proof)
+                            # 0x5B: Left Windows Key
+                            # 0x44: D key
+                            import ctypes
+                            user32 = ctypes.windll.user32
+                            user32.keybd_event(0x5B, 0, 0, 0) # Win Down
+                            user32.keybd_event(0x44, 0, 0, 0) # D Down
+                            user32.keybd_event(0x44, 0, 2, 0) # D Up
+                            user32.keybd_event(0x5B, 0, 2, 0) # Win Up
                             
                             last_desktop_toggle = time.time()
                             is_active = False # Reset after toggle

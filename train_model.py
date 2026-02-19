@@ -3,10 +3,28 @@ import csv
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.utils import class_weight
+import json
+import os
 
 # Config
 DATA_FILE = 'gesture_data.csv'
 MODEL_FILE = 'gesture_model.h5'
+CONFIG_FILE = 'gestures_config.json'
+
+# Load classes from config
+try:
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'r') as f:
+            config = json.load(f)
+            CLASSES = config.get("gestures", [])
+    else:
+        CLASSES = ['Volume', 'Bright_Up', 'Bright_Down', 'Show_Desktop']
+except Exception as e:
+    print(f"Error loading config: {e}")
+    CLASSES = ['Volume', 'Bright_Up', 'Bright_Down', 'Show_Desktop']
+
+NUM_CLASSES = len(CLASSES)
+print(f"Training for {NUM_CLASSES} classes: {CLASSES}")
 
 def load_data(file_path):
     X = []
