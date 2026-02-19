@@ -7,7 +7,7 @@ import json
 import os
 
 # Config
-DATA_FILE = 'gesture_data.csv'
+DATA_FILE = 'gesture_data_cleaned.csv'
 MODEL_FILE = 'gesture_model.h5'
 CONFIG_FILE = 'gestures_config.json'
 
