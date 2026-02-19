@@ -7,6 +7,7 @@ from collections import deque
 import pyautogui
 import subprocess
 import threading
+import json
 
 # Import MediaPipe Tasks
 from mediapipe.tasks import python
@@ -16,6 +17,14 @@ from mediapipe.tasks.python import vision
 from utils import normalize_landmarks
 
 # --- Configuration ---
+CONFIG_FILE = 'gestures_config.json'
+try:
+    with open(CONFIG_FILE, 'r') as f:
+        config = json.load(f)
+        CLASSES = config.get("gestures", [])
+except Exception as e:
+    CLASSES = ['Volume', 'Bright_Up', 'Bright_Down', 'Show_Desktop']
+
 MODEL_FILE = 'gesture_model.h5'
 CONFIDENCE_THRESHOLD = 0.8  # Higher threshold for stability
 MOVEMENT_THRESHOLD = 0.02 # Sensitivity for Volume movement
@@ -136,19 +145,30 @@ def main():
     current_gesture_state = None 
     gesture_hold_start_time = 0
     is_active = False
-    HOLD_DURATION = 3.0 # User requested 3 seconds
+    
+    # Timer Durations (Dynamic)
+    def get_hold_duration(class_id):
+        # 0: Volume -> 1.5s
+        if class_id == 0: return 1.5
+        # 1: Bright Up -> 0.75s
+        if class_id == 1: return 0.75
+        # 2: Bright Down -> 0.75s
+        if class_id == 2: return 0.75
+        # 3: Show Desktop -> 0.0s (Instant)
+        if class_id == 3: return 0.0
+        # Default -> 1.5s
+        return 1.5
+
     last_brightness_update = 0 
     last_volume_update = 0
     last_desktop_toggle = 0
     
     print("Starting gesture control...")
-    print(f"HOLD a gesture for {HOLD_DURATION}s to ACTIVATE it.")
+    print("Hold Durations: Vol=1.5s, Bright=0.75s, Desktop=Instant")
     print("Commands:")
-    print("  - Pinch (Class 0)    -> Volume Mode (Hold 3s, then Drag Up/Down)")
-    print("  - Index UP (Class 1) -> Brightness Up")
-    print("  - Index DOWN (Class 2)-> Brightness Down")
-    print("  - Open Hand (Class 3)-> Toggle Desktop")
-    print("  - Low Confidence     -> Idle")
+    for i, gesture in enumerate(CLASSES):
+        print(f"  - {gesture} (Class {i})")
+    print("  - Low Confidence -> Idle")
     print("Press 'q' to quit.")
 
     while cap.isOpened():
@@ -201,13 +221,20 @@ def main():
                         # Holding same gesture
                         elapsed = time.time() - gesture_hold_start_time
                         
-                        if elapsed >= HOLD_DURATION:
+                        duration = get_hold_duration(detected_state)
+                        
+                        if elapsed >= duration:
                             is_active = True
                             progress_bar_val = 1.0
                         else:
                             is_active = False
-                            progress_bar_val = elapsed / HOLD_DURATION
-                            gesture_text = f"Holding... {HOLD_DURATION - elapsed:.1f}s"
+                            if duration > 0:
+                                progress_bar_val = elapsed / duration
+                                gesture_text = f"Holding... {duration - elapsed:.1f}s"
+                            else:
+                                progress_bar_val = 1.0
+                                gesture_text = "Active"
+                            
                             color = (0, 165, 255) # Orange during hold
                             
                     else:
@@ -285,9 +312,9 @@ def main():
                     elif current_gesture_state == 3:
                         gesture_text = "ACTIVE: Show Desktop"
                         if time.time() - last_desktop_toggle > 2.0: # Debounce
-                            # Toggle Desktop via PowerShell
-                            subprocess.Popen(["powershell", "-Command", "(New-Object -ComObject Shell.Application).ToggleDesktop()"], 
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+                            # Toggle Desktop via Win+D shortcut (More reliable than Shell.Application)
+                            pyautogui.hotkey('win', 'd')
+                            
                             last_desktop_toggle = time.time()
                             is_active = False # Reset after toggle
                             current_gesture_state = None # Force reset to avoid spamming

@@ -5,8 +5,18 @@ import csv
 import os
 import time
 
-# Define gestures TO TRAIN
-CLASSES = ['Volume', 'Bright_Up', 'Bright_Down', 'Show_Desktop']
+import json
+
+# Load classes from config
+CONFIG_FILE = 'gestures_config.json'
+try:
+    with open(CONFIG_FILE, 'r') as f:
+        config = json.load(f)
+        CLASSES = config.get("gestures", [])
+except Exception as e:
+    print(f"Error loading config: {e}")
+    CLASSES = ['Volume', 'Bright_Up', 'Bright_Down', 'Show_Desktop'] # Fallback
+
 DATA_DIR = 'data'
 SAMPLES_PER_CLASS = 1000 # Good amount for stability
 
@@ -60,11 +70,12 @@ def main():
         cap = cv2.VideoCapture(0)
 
         print("--- GESTURE DATA COLLECTION ---")
-        print("Press keys 0-3 to record 500 samples per class:")
-        print("  [0] Volume Mode (Pinch Index+Thumb)")
-        print("  [1] Brightness Up (Index Finger Up)")
-        print("  [2] Brightness Down (Index Finger Down)")
-        print("  [3] Show Desktop (Open Palm)")
+        print("--- GESTURE DATA COLLECTION ---")
+        print(f"Press keys 0-{len(CLASSES)-1} to record {SAMPLES_PER_CLASS} samples per class:")
+        
+        for i, gesture in enumerate(CLASSES):
+            print(f"  [{i}] {gesture}")
+            
         print("Press 'q' to quit.")
         
         start_time = time.time()
@@ -105,7 +116,9 @@ def main():
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
                 break
-            elif key in [ord('0'), ord('1'), ord('2'), ord('3')]:
+            
+            # Dynamic key check based on number of classes
+            if 0 <= key - ord('0') < len(CLASSES):
                 if detection_result.hand_landmarks:
                     label = int(chr(key))
                     # Get landmarks for the first hand

@@ -21,13 +21,8 @@ def load_data(file_path):
             landmarks = [float(x) for x in row[:63]]
             label = int(row[63])
             
-            # Direct mapping from collect_data.py
-            # 0: Volume
-            # 1: Bright Up
-            # 2: Bright Down
-            # 3: Show Desktop
-            
-            if 0 <= label <= 3:
+            # Dynamic mapping based on config
+            if 0 <= label < NUM_CLASSES:
                 X.append(landmarks)
                 y.append(label)
             
@@ -73,7 +68,7 @@ def main():
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.3),
         tf.keras.layers.Dense(32, activation='relu'),
-        tf.keras.layers.Dense(4, activation='softmax') # 0=Vol, 1=B_Up, 2=B_Down, 3=Desktop
+        tf.keras.layers.Dense(NUM_CLASSES, activation='softmax')
     ])
 
     model.compile(
