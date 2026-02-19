@@ -1,0 +1,12 @@
+tensorflow
+opencv-python
+mediapipe
+pycaw
+pyautogui
+comtypes
+numpy
+
+scikit-learn
+streamlit
+
+
