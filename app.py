@@ -105,13 +105,27 @@ if st.sidebar.button("Reset Config (Default)"):
 st.sidebar.markdown("---")
 # Mouse Mode Toggle
 mouse_mode = config.get("mouse_mode", False)
-new_mouse_mode = st.sidebar.checkbox("🖱 Enable Air Mouse Mode", value=mouse_mode, help="2-Hand Control: Right=Cursor, Left=Click")
+new_mouse_mode = st.sidebar.checkbox("🖱 Enable Air Mouse Mode", value=mouse_mode, help="2-Hand Control: Left=Cursor, Right=Click")
 
 if new_mouse_mode != mouse_mode:
     config["mouse_mode"] = new_mouse_mode
     save_config(config)
     st.sidebar.info(f"Mouse Mode {'Enabled' if new_mouse_mode else 'Disabled'}")
     time.sleep(0.5)
+    st.rerun()
+
+# Window Settings
+st.sidebar.markdown("### 🖥️ Window Settings")
+headless = config.get("headless", False)
+always_on_top = config.get("always_on_top", True)
+
+new_headless = st.sidebar.checkbox("🚫 Headless Mode (No Window)", value=headless, help="Fixes background lag but hides camera view.")
+new_always_on_top = st.sidebar.checkbox("🔝 Always On Top", value=always_on_top, help="Keeps window visible to prevent throttling.")
+
+if new_headless != headless or new_always_on_top != always_on_top:
+    config["headless"] = new_headless
+    config["always_on_top"] = new_always_on_top
+    save_config(config)
     st.rerun()
 
 st.sidebar.markdown("---")
