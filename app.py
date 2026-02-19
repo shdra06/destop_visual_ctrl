@@ -103,6 +103,18 @@ if st.sidebar.button("Reset Config (Default)"):
     st.rerun()
 
 st.sidebar.markdown("---")
+# Mouse Mode Toggle
+mouse_mode = config.get("mouse_mode", False)
+new_mouse_mode = st.sidebar.checkbox("🖱 Enable Air Mouse Mode", value=mouse_mode, help="2-Hand Control: Right=Cursor, Left=Click")
+
+if new_mouse_mode != mouse_mode:
+    config["mouse_mode"] = new_mouse_mode
+    save_config(config)
+    st.sidebar.info(f"Mouse Mode {'Enabled' if new_mouse_mode else 'Disabled'}")
+    time.sleep(0.5)
+    st.rerun()
+
+st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Restart Dashboard", type="primary"):
     st.sidebar.warning("Restarting...")
     time.sleep(1)
