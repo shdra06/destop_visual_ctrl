@@ -7,7 +7,7 @@
         "Idle",
         "Victory"
     ],
-    "mouse_mode": true,
+    "mouse_mode": false,
     "headless": false,
     "always_on_top": true
 }

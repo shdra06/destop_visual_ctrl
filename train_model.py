@@ -7,7 +7,7 @@ import json
 import os
 
 # Config
-DATA_FILE = 'gesture_data_cleaned.csv'
+DATA_FILE = 'gesture_data.csv'
 MODEL_FILE = 'gesture_model.h5'
 CONFIG_FILE = 'gestures_config.json'
 
@@ -36,13 +36,23 @@ def load_data(file_path):
         
         for row in reader:
             # Parse landmarks (first 63 values)
-            landmarks = [float(x) for x in row[:63]]
-            label = int(row[63])
-            
-            # Dynamic mapping based on config
-            if 0 <= label < NUM_CLASSES:
-                X.append(landmarks)
-                y.append(label)
+            try:
+                if len(row) < 64:
+                    print(f"Skipping malformed row (length {len(row)}): {row}")
+                    continue
+                    
+                landmarks = [float(x) for x in row[:63]]
+                label = int(row[63])
+                
+                # Dynamic mapping based on config
+                if 0 <= label < NUM_CLASSES:
+                    X.append(landmarks)
+                    y.append(label)
+                else:
+                    print(f"Skipping invalid label {label}")
+            except ValueError as e:
+                print(f"Skipping invalid row: {e} | Row: {row}")
+                continue
             
     return np.array(X), np.array(y)
 
