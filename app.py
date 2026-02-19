@@ -5,6 +5,7 @@ import os
 import threading
 import time
 import sys
+import psutil
 
 # Page Config
 st.set_page_config(
@@ -161,31 +162,66 @@ with col4:
     st.header("4. Run")
     st.write("Control System.")
     
-    # Check if running
-    is_running = st.session_state['system_pid'] is not None
+    # Check if process is actually running using psutil
+    pid = st.session_state.get('system_pid', None)
+    is_running = False
     
+    if pid:
+        if psutil.pid_exists(pid):
+            try:
+                p = psutil.Process(pid)
+                # Check status (zombie processes are technically dead)
+                if p.status() != psutil.STATUS_ZOMBIE:
+                    is_running = True
+            except psutil.NoSuchProcess:
+                is_running = False
+        else:
+            is_running = False
+            
+    # Sync session state if process died externally
+    if not is_running and pid is not None:
+        st.session_state['system_pid'] = None
+        st.warning(f"Process {pid} ended unexpectedly.")
+
     if not is_running:
         if st.button("🚀 Start System", key="btn_start", type="primary"):
             st.info("Starting main.py...")
-            proc = run_process("main.py", capture_output=False)
-            if proc:
-                st.session_state['system_pid'] = proc.pid
-                st.rerun()
+            try:
+                proc = run_process("main.py", capture_output=False)
+                if proc:
+                    st.session_state['system_pid'] = proc.pid
+                    time.sleep(1) # Give it a second to start
+                    st.rerun()
+                else:
+                    st.error("Failed to start process.")
+            except Exception as e:
+                st.error(f"Start Error: {e}")
+                
     else:
-        st.success(f"System Running (PID: {st.session_state['system_pid']})")
+        st.success(f"System Running (PID: {pid})")
         
         if st.button("⏹ Stop System"):
             try:
-                os.kill(st.session_state['system_pid'], 9) # Force kill
+                p = psutil.Process(pid)
+                p.kill() # Force kill
+                p.wait(timeout=3) # Wait for it to die
+                st.session_state['system_pid'] = None
+                st.rerun()
+            except psutil.NoSuchProcess:
                 st.session_state['system_pid'] = None
                 st.rerun()
             except Exception as e:
                 st.error(f"Error stopping: {e}")
-                st.session_state['system_pid'] = None # Reset anyway
         
         if st.button("🔄 Restart System"):
              try:
-                os.kill(st.session_state['system_pid'], 9)
+                try:
+                    p = psutil.Process(pid)
+                    p.kill()
+                    p.wait(timeout=3)
+                except psutil.NoSuchProcess:
+                    pass
+                
                 time.sleep(1)
                 proc = run_process("main.py", capture_output=False)
                 if proc:
