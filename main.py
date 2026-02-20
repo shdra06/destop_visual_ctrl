@@ -9,22 +9,20 @@ import threading
 import json
 import math
 
-# Import Performance Module
-from performance import setup_performance, VideoStream, FPSMonitor
-# Import Gesture Logic Module
-from gesture_control import SystemController, GestureParams
 
-# Run Optimizations
+from performance import setup_performance, VideoStream, FPSMonitor
+
+from gesture_control import SystemController, GestureParams
 setup_performance()
 
-# Import MediaPipe Tasks
+
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-# Local imports
+
 from utils import normalize_landmarks
 
-# --- Configuration ---
+
 CONFIG_FILE = 'gestures_config.json'
 try:
     with open(CONFIG_FILE, 'r') as f:
@@ -46,41 +44,34 @@ def is_victory_gesture(landmarks):
     """
     Detects 'Victory' (Peace) sign: Index and Middle extended, others curled.
     """
-    # Landmarks: 8 (Index Tip), 6 (Index PIP), 12 (Middle Tip), 10 (Middle PIP)
-    # 16 (Ring Tip), 14 (Ring PIP), 20 (Pinky Tip), 18 (Pinky PIP)
     
-    # Check Index and Middle UP (Tip higher than PIP, y is inverted)
     index_up = landmarks[8].y < landmarks[6].y
     middle_up = landmarks[12].y < landmarks[10].y
     
-    # Check Ring and Pinky DOWN (Tip lower/same as PIP)
+    
     ring_down = landmarks[16].y > landmarks[14].y
     pinky_down = landmarks[20].y > landmarks[18].y
     
     return index_up and middle_up and ring_down and pinky_down
 
 def main():
-    # Optimizations
-    pyautogui.PAUSE = 0
-    pyautogui.FAILSAFE = False # We handle boundaries manually or via try-except
     
-    # Initialize Controllers
+    pyautogui.PAUSE = 0
+    pyautogui.FAILSAFE = False 
+    
+     
     sys_ctrl = SystemController()
     gesture_params = GestureParams(CLASSES)
 
-    # Load Model (Only needed for Gesture Mode)
+    
     model = None
-    # We load model once, even if MOUSE_MODE is enabled initially, just in case we switch.
-    # Actually, if we switch to Gesture Mode, we need model. 
-    # Let's load it if not loaded.
+    
     try:
         model = tf.keras.models.load_model(MODEL_FILE)
         print("Model loaded successfully.")
     except Exception as e:
         print(f"Error loading model: {e}")
-        # Proceed, but gesture mode won't work well
-    
-    # Initialize Video Stream ONCE
+       
     cap = VideoStream(0).start()
     fps_monitor = FPSMonitor()
     

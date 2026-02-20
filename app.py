@@ -7,7 +7,7 @@ import time
 import sys
 import psutil
 
-# Page Config
+
 st.set_page_config(
     page_title="Visual Desktop Control",
     page_icon="🖐",
@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Title & Styling
+
 st.title("🖐 Visual Desktop Control Center")
 st.markdown("""
 <style>
@@ -28,7 +28,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Path to python executable in venv
+
 if sys.platform == "win32":
     PYTHON_EXE = os.path.join("venv", "Scripts", "python.exe")
 else:
@@ -36,7 +36,6 @@ else:
 
 CONFIG_FILE = "gestures_config.json"
 
-# --- Functions ---
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -52,7 +51,7 @@ def run_process(script_name, capture_output=False):
     """Runs a script in a subprocess and streams output."""
     cmd = [PYTHON_EXE, script_name]
     
-    # Check if file exists
+    
     if not os.path.exists(script_name):
         st.error(f"File not found: {script_name}")
         return
@@ -69,7 +68,7 @@ def run_process(script_name, capture_output=False):
 
     return subprocess.Popen(cmd, **kwargs)
 
-# --- Sidebar: Configuration ---
+
 st.sidebar.header("⚙️ Configuration")
 
 config = load_config()
@@ -78,11 +77,11 @@ gestures = config.get("gestures", [])
 st.sidebar.subheader("Gesture Mapping")
 st.sidebar.info("Modify 'gestures_config.json' to add new classes.")
 
-# Display current gestures
+
 for i, g in enumerate(gestures):
     st.sidebar.text(f"{i}: {g}")
 
-# Add new gesture (Simple append for now)
+
 new_gesture = st.sidebar.text_input("New Gesture Name")
 if st.sidebar.button("Add New Gesture"):
     if new_gesture and new_gesture not in gestures:
@@ -103,7 +102,7 @@ if st.sidebar.button("Reset Config (Default)"):
     st.rerun()
 
 st.sidebar.markdown("---")
-# Mouse Mode Toggle
+
 mouse_mode = config.get("mouse_mode", False)
 new_mouse_mode = st.sidebar.checkbox("🖱 Enable Air Mouse Mode", value=mouse_mode, help="2-Hand Control: Left=Cursor, Right=Click")
 
@@ -114,7 +113,7 @@ if new_mouse_mode != mouse_mode:
     time.sleep(0.5)
     st.rerun()
 
-# Window Settings
+
 st.sidebar.markdown("### 🖥️ Window Settings")
 headless = config.get("headless", False)
 always_on_top = config.get("always_on_top", True)
@@ -132,10 +131,10 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Restart Dashboard", type="primary"):
     st.sidebar.warning("Restarting...")
     time.sleep(1)
-    # Reload the streamlit process
+   
     os.execv(sys.executable, [sys.executable, "-m", "streamlit", "run", "app.py"])
 
-# --- Main Dashboard ---
+
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -180,7 +179,7 @@ with col3:
         st.info("Running test_gesture.py in new terminal...")
         run_process("test_gesture.py", capture_output=False)
 
-# --- Session State for Process Management ---
+
 if 'system_pid' not in st.session_state:
     st.session_state['system_pid'] = None
 
@@ -188,7 +187,7 @@ with col4:
     st.header("4. Run")
     st.write("Control System.")
     
-    # Check if process is actually running using psutil
+    
     pid = st.session_state.get('system_pid', None)
     is_running = False
     
@@ -196,7 +195,7 @@ with col4:
         if psutil.pid_exists(pid):
             try:
                 p = psutil.Process(pid)
-                # Check status (zombie processes are technically dead)
+                
                 if p.status() != psutil.STATUS_ZOMBIE:
                     is_running = True
             except psutil.NoSuchProcess:
@@ -204,7 +203,7 @@ with col4:
         else:
             is_running = False
             
-    # Sync session state if process died externally
+   
     if not is_running and pid is not None:
         st.session_state['system_pid'] = None
         st.warning(f"Process {pid} ended unexpectedly.")
@@ -216,7 +215,7 @@ with col4:
                 proc = run_process("main.py", capture_output=False)
                 if proc:
                     st.session_state['system_pid'] = proc.pid
-                    time.sleep(1) # Give it a second to start
+                    time.sleep(1) 
                     st.rerun()
                 else:
                     st.error("Failed to start process.")
@@ -229,8 +228,8 @@ with col4:
         if st.button("⏹ Stop System"):
             try:
                 p = psutil.Process(pid)
-                p.kill() # Force kill
-                p.wait(timeout=3) # Wait for it to die
+                p.kill() 
+                p.wait(timeout=3) 
                 st.session_state['system_pid'] = None
                 st.rerun()
             except psutil.NoSuchProcess:
@@ -256,7 +255,7 @@ with col4:
              except Exception as e:
                 st.error(f"Error restarting: {e}")
 
-# --- Logs Section ---
+
 st.divider()
 st.subheader("📋 Guide & Instructions")
 with st.expander("Show Detailed Guide", expanded=True):

@@ -7,7 +7,7 @@ import time
 
 import json
 
-# Load classes from config
+
 CONFIG_FILE = 'gestures_config.json'
 try:
     with open(CONFIG_FILE, 'r') as f:
@@ -15,23 +15,23 @@ try:
         CLASSES = config.get("gestures", [])
 except Exception as e:
     print(f"Error loading config: {e}")
-    CLASSES = ['Volume', 'Bright_Up', 'Bright_Down', 'Show_Desktop'] # Fallback
+    CLASSES = ['Volume', 'Bright_Up', 'Bright_Down', 'Show_Desktop'] 
 
 DATA_DIR = 'data'
-SAMPLES_PER_CLASS = 1000 # Good amount for stability
+SAMPLES_PER_CLASS = 1000 
 
-# Import MediaPipe Tasks
+
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-# File to store data
+
 DATA_FILE = 'gesture_data.csv'
 
-# Check if file exists, if not create with header
+
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w', newline='') as f:
         writer = csv.writer(f)
-        # 21 landmarks * 3 coordinates (x, y, z) + label = 64 columns
+        
         header = []
         for i in range(21):
             header.extend([f'x{i}', f'y{i}', f'z{i}'])
@@ -39,16 +39,16 @@ if not os.path.exists(DATA_FILE):
         writer.writerow(header)
 
 def normalize_landmarks(landmarks):
-    # Convert list of objects to numpy array
+    
     coords = np.array([[lm.x, lm.y, lm.z] for lm in landmarks])
     
-    # Relative usage: subtract wrist (landmark 0)
+    
     base_x, base_y, base_z = coords[0]
     coords[:, 0] -= base_x
     coords[:, 1] -= base_y
     coords[:, 2] -= base_z
     
-    # Scale invariance: divide by max absolute value
+    
     max_val = np.max(np.abs(coords))
     if max_val > 0:
         coords /= max_val
@@ -56,7 +56,7 @@ def normalize_landmarks(landmarks):
     return coords.flatten().tolist()
 
 def main():
-    # Create an HandLandmarker object.
+    
     base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
     options = vision.HandLandmarkerOptions(
         base_options=base_options,
@@ -70,7 +70,7 @@ def main():
         cap = cv2.VideoCapture(0)
 
         print("--- GESTURE DATA COLLECTION ---")
-        print("--- GESTURE DATA COLLECTION ---")
+        
         print(f"Press keys 0-{len(CLASSES)-1} to record {SAMPLES_PER_CLASS} samples per class:")
         
         SUGGESTED_POSES = {
@@ -79,6 +79,7 @@ def main():
             "Bright_Down": "Thumb Down (👎) (Hand Closed)",
             "Show_Desktop": "Rock (🤘) / Thumb + 2 Fingers",
             "Idle": "No Command / Random Motion / Resting (🚫)"
+            "Victory": "Peace Sign (✌️) (Index + Middle Finger Up)"
         }
 
         for i, gesture in enumerate(CLASSES):
@@ -94,13 +95,13 @@ def main():
             if not ret:
                 break
                 
-            # Flip frame for mirror view
+            
             frame = cv2.flip(frame, 1)
-            # Convert to MediaPipe Image
+            
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
             
-            # Timestamp required for VIDEO mode
+            
             timestamp_ms = int((time.time() - start_time) * 1000)
             
             try:
@@ -109,10 +110,9 @@ def main():
                 print(f"Detection error: {e}")
                 continue
             
-            # Visualization
+            
             if detection_result.hand_landmarks:
-                # We need to draw manually or use a helper. 
-                # For simplicity in this script, we'll just draw circles for joints.
+                
                 for hand_landmarks in detection_result.hand_landmarks:
                     for lm in hand_landmarks:
                         h, w, c = frame.shape
@@ -121,12 +121,12 @@ def main():
 
             cv2.imshow('Collect Data', frame)
             
-            # Key Handling
+            
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
                 break
             
-            # Dynamic key check based on number of classes
+            
             if 0 <= key - ord('0') < len(CLASSES):
                 if detection_result.hand_landmarks:
                     label = int(chr(key))

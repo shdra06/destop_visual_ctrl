@@ -6,12 +6,12 @@ from sklearn.utils import class_weight
 import json
 import os
 
-# Config
+
 DATA_FILE = 'gesture_data.csv'
 MODEL_FILE = 'gesture_model.h5'
 CONFIG_FILE = 'gestures_config.json'
 
-# Load classes from config
+
 try:
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as f:
@@ -32,10 +32,10 @@ def load_data(file_path):
     
     with open(file_path, 'r') as f:
         reader = csv.reader(f)
-        header = next(reader) # Skip header
+        header = next(reader) 
         
         for row in reader:
-            # Parse landmarks (first 63 values)
+            
             try:
                 if len(row) < 64:
                     print(f"Skipping malformed row (length {len(row)}): {row}")
@@ -44,7 +44,7 @@ def load_data(file_path):
                 landmarks = [float(x) for x in row[:63]]
                 label = int(row[63])
                 
-                # Dynamic mapping based on config
+                
                 if 0 <= label < NUM_CLASSES:
                     X.append(landmarks)
                     y.append(label)
@@ -64,20 +64,16 @@ def main():
         print(f"Error: {DATA_FILE} not found. Run collect_data.py first.")
         return
 
-    # Check classes
+    
     unique_classes = np.unique(y)
     print(f"Found {len(X)} samples.")
     print(f"Classes found: {unique_classes}")
     
-    # We ideally need all 4 classes, but checks are loose to allow partial testing
-    if len(unique_classes) < 2:
-        print("Error: Need multiple classes to train.")
-        return
 
-    # Split data
+    
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Compute class weights
+    
     class_weights = class_weight.compute_class_weight(
         class_weight='balanced',
         classes=np.unique(y_train),
@@ -86,7 +82,7 @@ def main():
     class_weights_dict = dict(enumerate(class_weights))
     print(f"Class weights: {class_weights_dict}")
 
-    # Build Model
+    
     model = tf.keras.models.Sequential([
         tf.keras.layers.Input(shape=(63,)),
         tf.keras.layers.Dense(128, activation='relu'),
@@ -105,7 +101,7 @@ def main():
         metrics=['accuracy']
     )
     
-    # Train
+
     print("Training model...")
     history = model.fit(
         X_train, y_train,
@@ -116,11 +112,11 @@ def main():
         verbose=1
     )
     
-    # Evaluate
+    
     loss, accuracy = model.evaluate(X_test, y_test)
     print(f"Test Accuracy: {accuracy*100:.2f}%")
     
-    # Save
+    
     model.save(MODEL_FILE)
     print(f"Model saved to {MODEL_FILE}")
 

@@ -11,7 +11,7 @@ for gpu in gpus:
 
 print("\n--- MediaPipe Diagnosis ---")
 print(f"MediaPipe Version: {mp.__version__}")
-# Check if we can initialize a GPU delegate (indirectly via BaseOptions)
+
 from mediapipe.tasks import python
 try:
     base_options = python.BaseOptions(model_asset_path='hand_landmarker.task', delegate=python.BaseOptions.Delegate.GPU)
