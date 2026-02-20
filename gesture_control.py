@@ -87,6 +87,17 @@ class SystemController:
         self.last_desktop_toggle = time.time()
         return True
 
+    def toggle_media(self):
+        if time.time() - getattr(self, 'last_media_toggle', 0) < 1.0: # 1 second cooldown
+            return False
+            
+        user32 = ctypes.windll.user32
+        user32.keybd_event(0xB3, 0, 0, 0) # VK_MEDIA_PLAY_PAUSE Down
+        user32.keybd_event(0xB3, 0, 2, 0) # VK_MEDIA_PLAY_PAUSE Up
+        
+        self.last_media_toggle = time.time()
+        return True
+
 # Logic & Params Helper
 class GestureParams:
     def __init__(self, config_classes):
@@ -97,6 +108,8 @@ class GestureParams:
         self.B_DOWN_ID = self._get_id("Bright_Down")
         self.DESK_ID = self._get_id("Show_Desktop")
         self.IDLE_ID = self._get_id("Idle")
+        # Custom gestures
+        self.PAUSE_ID = self._get_id("pause track")
 
     def _get_id(self, name):
         try:
@@ -105,10 +118,11 @@ class GestureParams:
             return -999
 
     def get_hold_duration(self, class_id):
-        if class_id == self.VOL_ID: return 1.0
+        if class_id == self.VOL_ID: return 0.5 
         if class_id == self.B_UP_ID: return 0.5
         if class_id == self.B_DOWN_ID: return 0.5
         if class_id == self.DESK_ID: return 1.0 
+        if class_id == self.PAUSE_ID: return 0.5 
         return 1.0
 
     def get_confidence_threshold(self, class_id):
@@ -116,6 +130,7 @@ class GestureParams:
         if class_id == self.B_UP_ID: return 0.9
         if class_id == self.B_DOWN_ID: return 0.9
         if class_id == self.DESK_ID: return 0.9
+        if class_id == self.PAUSE_ID: return 0.8
         if class_id == self.IDLE_ID: return 0.8
         return 0.8
     

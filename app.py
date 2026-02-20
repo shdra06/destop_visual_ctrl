@@ -17,34 +17,64 @@ st.set_page_config(
 # Custom CSS for Modern UI
 st.markdown("""
 <style>
+    /* Reduce wasted space at the top */
+    .block-container {
+        padding-top: 1.5rem !important;
+        max-width: 1200px !important;
+    }
+
     /* Gradient text for main title */
     .main-title {
         background: -webkit-linear-gradient(45deg, #FF4B2B, #FF416C);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-size: 3rem !important;
+        font-size: 3.5rem !important;
         font-weight: 800 !important;
         margin-bottom: 0rem;
         padding-bottom: 0rem;
+        line-height: 1.2;
     }
     .sub-title {
-        color: #888;
-        font-size: 1.1rem;
-        margin-bottom: 2rem;
+        color: #a0a0a0;
+        font-size: 1.15rem;
+        margin-top: 0.5rem;
+        margin-bottom: 2.5rem;
         font-weight: 500;
+        letter-spacing: 0.5px;
     }
     
+    /* Make the pipeline cards "pop" and feel alive */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease, border-color 0.3s ease !important;
+        border-radius: 12px !important;
+        background: rgba(30, 30, 30, 0.6) !important;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4) !important; /* Elevated base state */
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 16px 24px rgba(255, 75, 43, 0.15), 0 0 10px rgba(255, 75, 43, 0.05) !important;
+        border-color: #FF4B2B !important;
+    }
+
     /* Better buttons */
     .stButton>button {
         width: 100%;
         border-radius: 8px;
         height: 3.2em;
         font-weight: 600;
-        transition: all 0.3s ease;
+        transition: all 0.3s ease !important;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background-color: rgba(40, 40, 40, 0.8);
     }
     .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        transform: translateY(-3px);
+        box-shadow: 0 6px 15px rgba(0,0,0,0.3) !important;
+        border-color: rgba(255, 255, 255, 0.3);
+        color: white;
+    }
+    .stButton>button:active {
+        transform: translateY(0px) scale(0.98);
     }
     
     /* Primary buttons get a modern glow */
@@ -54,19 +84,32 @@ st.markdown("""
         color: white;
     }
     .stButton>button[kind="primary"]:hover {
-        box-shadow: 0 4px 15px rgba(255, 65, 108, 0.4);
+        box-shadow: 0 8px 20px rgba(255, 65, 108, 0.4) !important;
+        filter: brightness(1.1);
     }
 
     /* Status indicators */
-    .status-online { color: #00C851; font-weight: bold; padding: 4px 8px; background: rgba(0,200,81,0.1); border-radius: 4px; }
-    .status-offline { color: #ff4444; font-weight: bold; padding: 4px 8px; background: rgba(255,68,68,0.1); border-radius: 4px; }
+    .status-online { color: #00E676; font-weight: 800; padding: 6px 12px; background: rgba(0,230,118,0.15); border-radius: 6px; letter-spacing: 1px; display: inline-block; margin-top: 5px; }
+    .status-offline { color: #FF1744; font-weight: 800; padding: 6px 12px; background: rgba(255,23,68,0.15); border-radius: 6px; letter-spacing: 1px; display: inline-block; margin-top: 5px; }
     
-    /* Sidebar styling */
+    /* Sidebar styling & refinement */
+    section[data-testid="stSidebar"] {
+        background-color: rgba(18, 18, 18, 0.95);
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
+    }
     .sidebar-header {
-        font-size: 1.2rem;
-        font-weight: 600;
-        margin-top: 1rem;
-        margin-bottom: 0.5rem;
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-top: 1.5rem;
+        margin-bottom: 0.8rem;
+        color: #f0f0f0;
+        border-bottom: 2px solid rgba(255, 75, 43, 0.5);
+        padding-bottom: 5px;
+        display: inline-block;
+    }
+    
+    hr {
+        border-color: rgba(255, 255, 255, 0.05);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -302,16 +345,36 @@ with col4:
 st.divider()
 
 with st.expander("📖 Getting Started & Best Practices", expanded=True):
-    st.markdown("""
-    ### 🎯 Default Gesture Library
-    | Gesture Name | Hand Shape | Action Bound | Required Motion |
-    | :--- | :--- | :--- | :--- |
-    | **Volume** | 👌 **Pinch** (Index + Thumb closed) | Adjusts PC Volume | Move Hand UP/DOWN |
-    | **Bright_Up** | 👍 **Thumb Up** | Increases Brightness | Hold Gesture |
-    | **Bright_Down** | 👎 **Thumb Down** | Decreases Brightness | Hold Gesture |
-    | **Show_Desktop** | 🤘 **Rock** or 3 Fingers | Minimizes all windows | Hold Gesture |
-    | **Idle** | 🖐️ **Relaxed Hand** | No action (Prevents overlap)| Random Motion |
+    st.markdown("### 🎯 Interactive Gesture Library")
+    st.markdown("Edit, add, or delete gesture details below. Click **Save** when done.")
+    
+    # Default library if none in config
+    default_lib = [
+        {"Gesture": "Volume", "Shape": "👌 Pinch", "Action": "Adjusts Volume", "Motion": "Move UP/DOWN"},
+        {"Gesture": "Bright_Up", "Shape": "👍 Thumb Up", "Action": "Increases Brightness", "Motion": "Hold"},
+        {"Gesture": "Bright_Down", "Shape": "👎 Thumb Down", "Action": "Decreases Brightness", "Motion": "Hold"},
+        {"Gesture": "Show_Desktop", "Shape": "🤘 Rock", "Action": "Minimizes windows", "Motion": "Hold"},
+        {"Gesture": "Idle", "Shape": "🖐️ Relaxed", "Action": "None", "Motion": "None"},
+        {"Gesture": "Victory", "Shape": "✌️ Peace", "Action": "Toggle Mouse/Gesture", "Motion": "Hold"},
+        {"Gesture": "pause track", "Shape": "🤏 Open Pinch", "Action": "Play/Pause Media", "Motion": "Hold 0.5s"},
+        {"Gesture": "Scroll Mode", "Shape": "☝️ Thumb Extended", "Action": "Scroll Page (Mouse Mode)", "Motion": "Move Index"}
+    ]
+    
+    library_data = config.get("gesture_library", default_lib)
+    
+    edited_data = st.data_editor(
+        library_data, 
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    if st.button("💾 Save Library Changes", key="save_lib"):
+        config["gesture_library"] = edited_data
+        save_config(config)
+        st.success("Library updated successfully!")
 
+    st.markdown("""
     ### 🛠️ Step-by-Step Guide
     1. **Data Collection**: Stand in a well-lit area. Click `Start Data Collector` and follow the prompt. Capture at least ~1000 frames per gesture at various angles.
     2. **Training**: Once data is collected, hit `Train AI Model`. Wait for the success message.

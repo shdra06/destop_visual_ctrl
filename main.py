@@ -55,7 +55,15 @@ def is_victory_gesture(landmarks):
     return index_up and middle_up and ring_down and pinky_down
 
 def main():
-    
+    # Elevate Process Priority to prevent Windows from throttling CPU when running in the background
+    try:
+        import psutil, os
+        p = psutil.Process(os.getpid())
+        p.nice(psutil.HIGH_PRIORITY_CLASS)
+        print("Process priority elevated to HIGH to prevent background lag.")
+    except Exception as e:
+        print(f"Could not elevate process priority: {e}")
+        
     pyautogui.PAUSE = 0
     pyautogui.FAILSAFE = False 
     
@@ -115,6 +123,10 @@ def main():
                 prev_x, prev_y_mouse = 0, 0
                 smoothing_alpha = 0.5
                 already_clicked = False
+                scroll_direction_lock = None # None, "UP", or "DOWN"
+                
+                # Universal gesture states
+                universal_pause_start_time = 0
 
                 print("Active.")
                 print(f"Mode: {'MOUSE MODE (2 Hands)' if MOUSE_MODE else 'GESTURE MODE (1 Hand)'}")
@@ -295,17 +307,26 @@ def main():
                                     # only if a distinct movement threshold is passed AND cooldown has elapsed
                                     if abs(delta_y) > 0.015: 
                                         current_time = time.time()
-                                        if current_time - last_scroll_time > 0.4: # 400ms Cooldown between scrolls
+                                        # 400ms Cooldown between scrolls
+                                        if current_time - last_scroll_time > 0.4: 
+                                            direction = "UP" if delta_y < 0 else "DOWN"
                                             
-                                            scroll_amount = 150 if delta_y < 0 else -150 # Positive=Up, Negative=Down
-                                            try:
-                                                pyautogui.scroll(scroll_amount)
-                                                last_scroll_time = current_time
-                                                
-                                                direction = "UP" if delta_y < 0 else "DOWN"
-                                                cv2.putText(frame, f"SCROLLED {direction}", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 165, 0), 2)
-                                            except Exception:
-                                                pass
+                                            # If not locked, lock into this direction
+                                            if scroll_direction_lock is None:
+                                                scroll_direction_lock = direction
+                                            
+                                            # Only scroll if moving in the locked direction
+                                            if direction == scroll_direction_lock:
+                                                scroll_amount = 150 if direction == "UP" else -150
+                                                try:
+                                                    pyautogui.scroll(scroll_amount)
+                                                    last_scroll_time = current_time
+                                                    cv2.putText(frame, f"SCROLL {direction} (LOCKED)", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 165, 0), 2)
+                                                except Exception:
+                                                    pass
+                                            else:
+                                                # Ignoring reverse motion (returning hand to center)
+                                                cv2.putText(frame, f"IGNORING {direction} (LOCKED TO {scroll_direction_lock})", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (150, 150, 150), 2)
                                         else:
                                             cv2.putText(frame, "SCROLL WAIT...", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
                                     else:
@@ -314,8 +335,9 @@ def main():
                                 prev_y = current_y
                             
                             else:
-                                # --- CLICK LOGIC (Only if not scrolling) ---
-                                prev_y = None # Reset scroll tracking 
+                                # Not scrolling, reset locks and trackers
+                                prev_y = None 
+                                scroll_direction_lock = None
                                 
                                 # Pinch Detection (Thumb 4, Index 8)
                                 x1, y1 = click_hand[4].x, click_hand[4].y
@@ -370,9 +392,12 @@ def main():
                             if model:
                                 prediction = model(input_data, training=False).numpy()
                                 class_id = np.argmax(prediction)
-                                confidence = prediction[0][class_id]
-                                
                                 threshold = gesture_params.get_confidence_threshold(class_id)
+                                
+                                # Ignore "Scroll Mode" entirely in standard Gesture mode
+                                if "Scroll Mode" in CLASSES and class_id == CLASSES.index("Scroll Mode"):
+                                    class_id = -1
+                                    confidence = 0.0
                                 
                                 if confidence > threshold:
                                     gesture_buffer.append(class_id)
@@ -453,6 +478,17 @@ def main():
                                                 gesture_text = "Active: Desktop Toggle"
                                                 is_active = False
                                                 current_gesture_state = None
+                                                
+                                        # Pause Track
+                                        elif getattr(gesture_params, 'PAUSE_ID', -999) != -999 and current_gesture_state == gesture_params.PAUSE_ID:
+                                            if sys_ctrl.toggle_media():
+                                                cv2.putText(frame, "PLAY / PAUSE", (int(w/2)-150, int(h/2)), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 5)
+                                                gesture_text = "Active: Play/Pause"
+                                                # Reset state completely after toggle
+                                                is_active = False
+                                                current_gesture_state = None
+                                            else:
+                                                gesture_text = "Active: Media Cooldown"
                                         
                                         else:
                                             gesture_name = CLASSES[current_gesture_state]

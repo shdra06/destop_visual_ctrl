@@ -6,7 +6,8 @@
         "Show_Desktop",
         "Idle",
         "Victory",
-        "Scroll Mode"
+        "Scroll Mode",
+        "pause track"
     ],
     "mouse_mode": true,
     "headless": false,
