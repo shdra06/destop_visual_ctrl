@@ -78,7 +78,7 @@ def main():
             "Bright_Up": "Thumb Up (👍) (Hand Closed)",
             "Bright_Down": "Thumb Down (👎) (Hand Closed)",
             "Show_Desktop": "Rock (🤘) / Thumb + 2 Fingers",
-            "Idle": "No Command / Random Motion / Resting (🚫)"
+            "Idle": "No Command / Random Motion / Resting (🚫)",
             "Victory": "Peace Sign (✌️) (Index + Middle Finger Up)"
         }
 

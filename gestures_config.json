@@ -5,9 +5,10 @@
         "Bright_Down",
         "Show_Desktop",
         "Idle",
-        "Victory"
+        "Victory",
+        "Scroll Mode"
     ],
-    "mouse_mode": false,
+    "mouse_mode": true,
     "headless": false,
     "always_on_top": true
 }

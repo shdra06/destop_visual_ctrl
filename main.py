@@ -146,9 +146,21 @@ def main():
                     if detection_result.hand_landmarks:
                         # Check all detected hands
                         for hl in detection_result.hand_landmarks:
-                            if is_victory_gesture(hl):
-                                victory_detected = True
-                                break # Found one
+                            if model and "Victory" in CLASSES:
+                                input_data = np.array([normalize_landmarks(hl)])
+                                prediction = model(input_data, training=False).numpy()
+                                class_id = np.argmax(prediction)
+                                confidence = prediction[0][class_id]
+                                
+                                # High confidence threshold to prevent accidental mode switching
+                                if class_id == CLASSES.index("Victory") and confidence > 0.85:
+                                    victory_detected = True
+                                    break
+                            else:
+                                # Fallback to geometric check if model or class missing
+                                if is_victory_gesture(hl):
+                                    victory_detected = True
+                                    break # Found one
                     
                     if victory_detected:
                         if mode_switch_start_time == 0:
@@ -223,34 +235,108 @@ def main():
                             # --- Mouse Sensitivity / Gain Logic ---
                             # Map a smaller area of the camera to the full screen to increase speed
                             h, w, c = frame.shape
-                            margin = 50 # Pixels from edge (Balanced: Reachable corners but stable)
+                            margin_x = 120 # Larger margin = smaller trackpad (more sensitive horizontally)
+                            margin_y = 100 # Smaller trackpad vertically
                             
                             # Clamp raw coordinates to the active area
-                            lm_x = max(margin, min(w - margin, int(lm.x * w)))
-                            lm_y = max(margin, min(h - margin, int(lm.y * h)))
+                            lm_x = max(margin_x, min(w - margin_x, int(lm.x * w)))
+                            lm_y = max(margin_y, min(h - margin_y, int(lm.y * h)))
                             
                             # Map to Screen Coordinates
-                            target_x = np.interp(lm_x, [margin, w - margin], [0, screen_w])
-                            target_y = np.interp(lm_y, [margin, h - margin], [0, screen_h])
+                            target_x = np.interp(lm_x, [margin_x, w - margin_x], [0, screen_w])
+                            target_y = np.interp(lm_y, [margin_y, h - margin_y], [0, screen_h])
                             
-                            # Smoothing (Alpha 0.4 = Good balance of speed and smoothness)
-                            smoothing_alpha = 0.4 
+                            # Stronger Smoothing (Alpha 0.15 = Much smoother but slight delay, perfect for shaky hands)
+                            smoothing_alpha = 0.15 
                             cur_x = prev_x + smoothing_alpha * (target_x - prev_x)
                             cur_y = prev_y_mouse + smoothing_alpha * (target_y - prev_y_mouse)
                             
-                            try:
-                                pyautogui.moveTo(cur_x, cur_y)
-                            except pyautogui.FailSafeException:
-                                pass
-                                
+                            # Deadzone Logic: Only move the actual System Mouse if the change is noticeable
+                            # This prevents micro-jitters when just holding the hand completely still
+                            if abs(cur_x - prev_x) > 1.0 or abs(cur_y - prev_y_mouse) > 1.0:
+                                try:
+                                    pyautogui.moveTo(cur_x, cur_y)
+                                except pyautogui.FailSafeException:
+                                    pass
+                                    
                             prev_x, prev_y_mouse = cur_x, cur_y
                             
                             # Visual Guide for Active Area
-                            cv2.rectangle(frame, (margin, margin), (w - margin, h - margin), (0, 255, 255), 1)
+                            cv2.rectangle(frame, (margin_x, margin_y), (w - margin_x, h - margin_y), (0, 255, 255), 1)
                             cv2.putText(frame, "Cursor: Active", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                         
-                        # 2. Click Control (Right Hand)
+                        # 2. Click & Scroll Control (Right Hand)
                         if click_hand:
+                            # --- SCROLL LOGIC ---
+                            # Evaluate model to see if "Scroll Mode" (Thumb extended) is detected
+                            input_data = np.array([normalize_landmarks(click_hand)])
+                            prediction = model(input_data, training=False).numpy() if model else None
+                            
+                            is_scrolling = False
+                            if prediction is not None:
+                                class_id = np.argmax(prediction)
+                                confidence = prediction[0][class_id]
+                                
+                                # If label 6 ('Scroll Mode') is detected with high confidence
+                                if class_id == 6 and confidence > 0.7:
+                                    is_scrolling = True
+                                    
+                            if is_scrolling:
+                                current_y = click_hand[8].y  # Track index finger y-position for scroll speed
+                                
+                                # Initialize scroll tracking state if not present
+                                if 'last_scroll_time' not in locals():
+                                    last_scroll_time = 0
+                                
+                                if prev_y is not None:
+                                    delta_y = current_y - prev_y
+                                    
+                                    # Trigger a single discrete scroll (e.g., typical mouse wheel click)
+                                    # only if a distinct movement threshold is passed AND cooldown has elapsed
+                                    if abs(delta_y) > 0.015: 
+                                        current_time = time.time()
+                                        if current_time - last_scroll_time > 0.4: # 400ms Cooldown between scrolls
+                                            
+                                            scroll_amount = 150 if delta_y < 0 else -150 # Positive=Up, Negative=Down
+                                            try:
+                                                pyautogui.scroll(scroll_amount)
+                                                last_scroll_time = current_time
+                                                
+                                                direction = "UP" if delta_y < 0 else "DOWN"
+                                                cv2.putText(frame, f"SCROLLED {direction}", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 165, 0), 2)
+                                            except Exception:
+                                                pass
+                                        else:
+                                            cv2.putText(frame, "SCROLL WAIT...", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+                                    else:
+                                        cv2.putText(frame, "SCROLL READY", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+                                        
+                                prev_y = current_y
+                            
+                            else:
+                                # --- CLICK LOGIC (Only if not scrolling) ---
+                                prev_y = None # Reset scroll tracking 
+                                
+                                # Pinch Detection (Thumb 4, Index 8)
+                                x1, y1 = click_hand[4].x, click_hand[4].y
+                                x2, y2 = click_hand[8].x, click_hand[8].y
+                                distance = math.hypot(x2 - x1, y2 - y1)
+                                
+                                # Visual feedback for pinch
+                                h, w, c = frame.shape
+                                cx, cy = int(x1 * w), int(y1 * h)
+                                cv2.putText(frame, f"Dist: {distance:.3f}", (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+    
+                                if distance < 0.05: # Pinch Threshold
+                                    if not already_clicked:
+                                        try:
+                                            pyautogui.click()
+                                        except Exception:
+                                            pass
+                                        already_clicked = True
+                                        cv2.putText(frame, "CLICK!", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                                else:
+                                    already_clicked = False
                             # Pinch Detection (Thumb 4, Index 8)
                             x1, y1 = click_hand[4].x, click_hand[4].y
                             x2, y2 = click_hand[8].x, click_hand[8].y
@@ -282,7 +368,7 @@ def main():
                             input_data = np.array([normalize_landmarks(hand_landmarks)])
                             # Check model
                             if model:
-                                prediction = model.predict(input_data, verbose=0)
+                                prediction = model(input_data, training=False).numpy()
                                 class_id = np.argmax(prediction)
                                 confidence = prediction[0][class_id]
                                 

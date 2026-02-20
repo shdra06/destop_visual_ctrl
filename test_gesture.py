@@ -91,7 +91,7 @@ def main():
 
             
             input_data = np.array([normalize_landmarks(hand_landmarks)])
-            prediction = model.predict(input_data, verbose=0)
+            prediction = model(input_data, training=False).numpy()
             probs = prediction[0]
             predicted_idx = np.argmax(probs)
 
