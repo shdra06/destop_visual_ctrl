@@ -9,19 +9,96 @@ import threading
 import json
 import math
 
+import os
+import psutil
+from gesture_control import SystemController, GestureParams, MouseController, GestureProcessor
 
-from performance import setup_performance, VideoStream, FPSMonitor
+def setup_performance():
+    try:
+        p = psutil.Process(os.getpid())
+        p.nice(psutil.HIGH_PRIORITY_CLASS)
+        print("Process set to HIGH PRIORITY to prevent background lag.")
+    except Exception as e:
+        print(f"Failed to set high priority: {e}")
 
-from gesture_control import SystemController, GestureParams
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            print(f"GPU Detected: {len(gpus)} device(s). Using GPU for inference.")
+        except RuntimeError as e:
+            print(f"GPU Config Error: {e}")
+    else:
+        print("No GPU detected. Using CPU.")
+
+class VideoStream:
+    def __init__(self, src=0):
+        self.stream = cv2.VideoCapture(src)
+        self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        (self.grabbed, self.frame) = self.stream.read()
+        self.stopped = False
+
+    def start(self):
+        t = threading.Thread(target=self.update, args=())
+        t.daemon = True 
+        t.start()
+        return self
+
+    def update(self):
+        while not self.stopped:
+            (self.grabbed, self.frame) = self.stream.read()
+            if not self.grabbed:
+                self.stop()
+                break
+            time.sleep(0.001) 
+
+    def read(self):
+        return self.frame
+
+    def stop(self):
+        self.stopped = True
+        self.stream.release()
+
+class FPSMonitor:
+    def __init__(self):
+        self.prev_time = 0
+        self.new_time = 0
+        self.fps = 0
+
+    def update(self):
+        self.new_time = time.time()
+        diff = self.new_time - self.prev_time
+        if diff > 0:
+            self.fps = 1 / diff
+        self.prev_time = self.new_time
+        return int(self.fps)
+
+    def get(self):
+        return int(self.fps)
+
+def normalize_landmarks(landmarks):
+    if hasattr(landmarks[0], 'x'):
+        coords = np.array([[lm.x, lm.y, lm.z] for lm in landmarks])
+    else:
+        coords = np.array(landmarks)
+        
+    base_x, base_y, base_z = coords[0]
+    coords[:, 0] -= base_x
+    coords[:, 1] -= base_y
+    coords[:, 2] -= base_z
+    
+    max_val = np.max(np.abs(coords))
+    if max_val > 0:
+        coords /= max_val
+        
+    return coords.flatten().tolist()
+
 setup_performance()
-
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-
-
-from utils import normalize_landmarks
-
 
 CONFIG_FILE = 'gestures_config.json'
 try:
@@ -44,18 +121,17 @@ def is_victory_gesture(landmarks):
     """
     Detects 'Victory' (Peace) sign: Index and Middle extended, others curled.
     """
-    
+
     index_up = landmarks[8].y < landmarks[6].y
     middle_up = landmarks[12].y < landmarks[10].y
-    
-    
+
     ring_down = landmarks[16].y > landmarks[14].y
     pinky_down = landmarks[20].y > landmarks[18].y
-    
+
     return index_up and middle_up and ring_down and pinky_down
 
 def main():
-    # Elevate Process Priority to prevent Windows from throttling CPU when running in the background
+
     try:
         import psutil, os
         p = psutil.Process(os.getpid())
@@ -63,33 +139,29 @@ def main():
         print("Process priority elevated to HIGH to prevent background lag.")
     except Exception as e:
         print(f"Could not elevate process priority: {e}")
-        
+
     pyautogui.PAUSE = 0
-    pyautogui.FAILSAFE = False 
-    
-     
+    pyautogui.FAILSAFE = False
+
     sys_ctrl = SystemController()
     gesture_params = GestureParams(CLASSES)
 
-    
     model = None
-    
+
     try:
         model = tf.keras.models.load_model(MODEL_FILE)
         print("Model loaded successfully.")
     except Exception as e:
         print(f"Error loading model: {e}")
-       
+
     cap = VideoStream(0).start()
     fps_monitor = FPSMonitor()
-    
-    global MOUSE_MODE # Use global to update config if needed or just local variable
-    # Actually locally is fine, we update config file too.
-    
+
+    global MOUSE_MODE
+
     try:
-        while True: # Outer Loop for Mode Switching
-            
-            # Initialize MediaPipe based on current Mode
+        while True:
+
             num_hands = 2 if MOUSE_MODE else 1
             print(f"Initializing MediaPipe for {num_hands} hand(s)...")
 
@@ -97,95 +169,78 @@ def main():
             options = vision.HandLandmarkerOptions(
                 base_options=base_options,
                 num_hands=num_hands,
-                min_hand_detection_confidence=0.5, # Lowered for speed
+                min_hand_detection_confidence=0.5,
                 min_hand_presence_confidence=0.5,
                 min_tracking_confidence=0.5,
                 running_mode=vision.RunningMode.VIDEO)
-            
-            # Helper for Mode Switch
+
             mode_switch_start_time = 0
-            MODE_SWITCH_DELAY = 1.0 
-            should_break = False # Flag to break inner loop
-            should_exit = False # Flag to exit program
+            MODE_SWITCH_DELAY = 1.0
+            should_break = False
+            should_exit = False
 
             with vision.HandLandmarker.create_from_options(options) as landmarker:
                 start_time = time.time()
-                
-                # State variables (Gesture Mode)
-                prev_y = None
-                gesture_buffer = deque(maxlen=SMOOTHING_BUFFER)
-                current_gesture_state = None 
-                gesture_hold_start_time = 0
-                is_active = False
-                
-                # State variables (Mouse Mode)
+
                 screen_w, screen_h = pyautogui.size()
-                prev_x, prev_y_mouse = 0, 0
-                smoothing_alpha = 0.5
-                already_clicked = False
-                scroll_direction_lock = None # None, "UP", or "DOWN"
-                
-                # Universal gesture states
-                universal_pause_start_time = 0
+                mouse_ctrl = MouseController(screen_w, screen_h)
+                gesture_processor = GestureProcessor(sys_ctrl, gesture_params, CLASSES, SMOOTHING_BUFFER)
 
                 print("Active.")
                 print(f"Mode: {'MOUSE MODE (2 Hands)' if MOUSE_MODE else 'GESTURE MODE (1 Hand)'}")
                 print(f"Window: {'HEADLESS' if HEADLESS else ('ALWAYS ON TOP' if ALWAYS_ON_TOP else 'NORMAL')}")
                 print("Press 'q' (or Ctrl+C in Headless) to quit.")
 
-                while True: # Inner Loop (Frame Processing)
+                while True:
                     frame = cap.read()
                     if frame is None:
                         should_exit = True
                         break
-                        
+
                     frame = cv2.flip(frame, 1)
                     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-                    
+
                     fps = fps_monitor.update()
                     cv2.putText(frame, f"FPS: {fps}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    
+
                     timestamp_ms = int((time.time() - start_time) * 1000)
-                
+
                     try:
                         detection_result = landmarker.detect_for_video(mp_image, timestamp_ms)
                     except Exception as e:
                         continue
-                    
-                    # --- VICTORY GESTURE CHECK (Mode Switch) ---
+
                     victory_detected = False
                     if detection_result.hand_landmarks:
-                        # Check all detected hands
+
                         for hl in detection_result.hand_landmarks:
                             if model and "Victory" in CLASSES:
                                 input_data = np.array([normalize_landmarks(hl)])
                                 prediction = model(input_data, training=False).numpy()
                                 class_id = np.argmax(prediction)
                                 confidence = prediction[0][class_id]
-                                
-                                # High confidence threshold to prevent accidental mode switching
+
                                 if class_id == CLASSES.index("Victory") and confidence > 0.85:
                                     victory_detected = True
                                     break
                             else:
-                                # Fallback to geometric check if model or class missing
+
                                 if is_victory_gesture(hl):
                                     victory_detected = True
-                                    break # Found one
-                    
+                                    break
+
                     if victory_detected:
                         if mode_switch_start_time == 0:
                             mode_switch_start_time = time.time()
-                        
+
                         elapsed = time.time() - mode_switch_start_time
                         remaining = MODE_SWITCH_DELAY - elapsed
-                        
+
                         msg = "Hold Victory to Switch..." if remaining > 0 else "Switching..."
-                        cv2.putText(frame, msg, (int(frame.shape[1]/2)-100, int(frame.shape[0]/2)), 
+                        cv2.putText(frame, msg, (int(frame.shape[1]/2)-100, int(frame.shape[0]/2)),
                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 3)
-                        
-                        # Draw Progress Bar
+
                         bar_w = 200
                         progress = min(1.0, elapsed / MODE_SWITCH_DELAY)
                         cv2.rectangle(frame, (220, 250), (220 + int(bar_w * progress), 270), (255, 0, 255), -1)
@@ -193,7 +248,7 @@ def main():
 
                         if elapsed >= MODE_SWITCH_DELAY:
                             MOUSE_MODE = not MOUSE_MODE
-                            # Update Config File for persistence (optional)
+
                             try:
                                 with open(CONFIG_FILE, 'r') as f:
                                     c = json.load(f)
@@ -201,20 +256,17 @@ def main():
                                 with open(CONFIG_FILE, 'w') as f:
                                     json.dump(c, f, indent=4)
                             except: pass
-                            
-                            # Visual Feedback before break
-                            cv2.putText(frame, f"SWITCHED TO {'MOUSE' if MOUSE_MODE else 'GESTURE'}!", 
+
+                            cv2.putText(frame, f"SWITCHED TO {'MOUSE' if MOUSE_MODE else 'GESTURE'}!",
                                        (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 4)
                             if not HEADLESS:
                                 cv2.imshow('Gesture Control', frame)
-                                cv2.waitKey(500) # Pause briefly to show message
+                                cv2.waitKey(500)
                             should_break = True
-                            break # Break Inner Loop
+                            break
                     else:
                         mode_switch_start_time = 0
 
-
-                    # Draw Landmarks
                     if detection_result.hand_landmarks:
                         for hand_landmarks in detection_result.hand_landmarks:
                             for lm in hand_landmarks:
@@ -222,301 +274,53 @@ def main():
                                 cx, cy = int(lm.x * w), int(lm.y * h)
                                 cv2.circle(frame, (cx, cy), 5, (255, 0, 0), -1)
 
-                    # --- MOUSE MODE LOGIC ---
                     if MOUSE_MODE:
                         cursor_hand = None
                         click_hand = None
-                        
+
                         if detection_result.hand_landmarks and detection_result.handedness:
                             for i, hand_landmarks in enumerate(detection_result.hand_landmarks):
-                                # Handedness label (Left/Right)
-                                # Note: MediaPipe mirrors handedness if flip is not handled correctly, 
-                                # but since we flipped image, Right hand should be "Right".
-                                # Let's trust the label for now.
+
                                 label = detection_result.handedness[i][0].category_name
-                                
+
                                 if label == "Left":
                                     cursor_hand = hand_landmarks
                                 elif label == "Right":
                                     click_hand = hand_landmarks
-                        
-                        # 1. Cursor Control (Left Hand)
+
                         if cursor_hand:
-                            lm = cursor_hand[8] # Index Tip
-                            
-                            # --- Mouse Sensitivity / Gain Logic ---
-                            # Map a smaller area of the camera to the full screen to increase speed
                             h, w, c = frame.shape
-                            margin_x = 120 # Larger margin = smaller trackpad (more sensitive horizontally)
-                            margin_y = 100 # Smaller trackpad vertically
-                            
-                            # Clamp raw coordinates to the active area
-                            lm_x = max(margin_x, min(w - margin_x, int(lm.x * w)))
-                            lm_y = max(margin_y, min(h - margin_y, int(lm.y * h)))
-                            
-                            # Map to Screen Coordinates
-                            target_x = np.interp(lm_x, [margin_x, w - margin_x], [0, screen_w])
-                            target_y = np.interp(lm_y, [margin_y, h - margin_y], [0, screen_h])
-                            
-                            # Stronger Smoothing (Alpha 0.15 = Much smoother but slight delay, perfect for shaky hands)
-                            smoothing_alpha = 0.15 
-                            cur_x = prev_x + smoothing_alpha * (target_x - prev_x)
-                            cur_y = prev_y_mouse + smoothing_alpha * (target_y - prev_y_mouse)
-                            
-                            # Deadzone Logic: Only move the actual System Mouse if the change is noticeable
-                            # This prevents micro-jitters when just holding the hand completely still
-                            if abs(cur_x - prev_x) > 1.0 or abs(cur_y - prev_y_mouse) > 1.0:
-                                try:
-                                    pyautogui.moveTo(cur_x, cur_y)
-                                except pyautogui.FailSafeException:
-                                    pass
-                                    
-                            prev_x, prev_y_mouse = cur_x, cur_y
-                            
-                            # Visual Guide for Active Area
-                            cv2.rectangle(frame, (margin_x, margin_y), (w - margin_x, h - margin_y), (0, 255, 255), 1)
+                            mouse_ctrl.process_cursor(cursor_hand, w, h)
+                            cv2.rectangle(frame, (mouse_ctrl.margin_x, mouse_ctrl.margin_y), (w - mouse_ctrl.margin_x, h - mouse_ctrl.margin_y), (0, 255, 255), 1)
                             cv2.putText(frame, "Cursor: Active", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-                        
-                        # 2. Click & Scroll Control (Right Hand)
+
                         if click_hand:
-                            # --- SCROLL LOGIC ---
-                            # Evaluate model to see if "Scroll Mode" (Thumb extended) is detected
-                            input_data = np.array([normalize_landmarks(click_hand)])
-                            prediction = model(input_data, training=False).numpy() if model else None
-                            
-                            is_scrolling = False
-                            if prediction is not None:
-                                class_id = np.argmax(prediction)
-                                confidence = prediction[0][class_id]
-                                
-                                # If label 6 ('Scroll Mode') is detected with high confidence
-                                if class_id == 6 and confidence > 0.7:
-                                    is_scrolling = True
-                                    
-                            if is_scrolling:
-                                current_y = click_hand[8].y  # Track index finger y-position for scroll speed
-                                
-                                # Initialize scroll tracking state if not present
-                                if 'last_scroll_time' not in locals():
-                                    last_scroll_time = 0
-                                
-                                if prev_y is not None:
-                                    delta_y = current_y - prev_y
-                                    
-                                    # Trigger a single discrete scroll (e.g., typical mouse wheel click)
-                                    # only if a distinct movement threshold is passed AND cooldown has elapsed
-                                    if abs(delta_y) > 0.015: 
-                                        current_time = time.time()
-                                        # 400ms Cooldown between scrolls
-                                        if current_time - last_scroll_time > 0.4: 
-                                            direction = "UP" if delta_y < 0 else "DOWN"
-                                            
-                                            # If not locked, lock into this direction
-                                            if scroll_direction_lock is None:
-                                                scroll_direction_lock = direction
-                                            
-                                            # Only scroll if moving in the locked direction
-                                            if direction == scroll_direction_lock:
-                                                scroll_amount = 150 if direction == "UP" else -150
-                                                try:
-                                                    pyautogui.scroll(scroll_amount)
-                                                    last_scroll_time = current_time
-                                                    cv2.putText(frame, f"SCROLL {direction} (LOCKED)", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 165, 0), 2)
-                                                except Exception:
-                                                    pass
-                                            else:
-                                                # Ignoring reverse motion (returning hand to center)
-                                                cv2.putText(frame, f"IGNORING {direction} (LOCKED TO {scroll_direction_lock})", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (150, 150, 150), 2)
-                                        else:
-                                            cv2.putText(frame, "SCROLL WAIT...", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-                                    else:
-                                        cv2.putText(frame, "SCROLL READY", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-                                        
-                                prev_y = current_y
-                            
-                            else:
-                                # Not scrolling, reset locks and trackers
-                                prev_y = None 
-                                scroll_direction_lock = None
-                                
-                                # Pinch Detection (Thumb 4, Index 8)
-                                x1, y1 = click_hand[4].x, click_hand[4].y
-                                x2, y2 = click_hand[8].x, click_hand[8].y
-                                distance = math.hypot(x2 - x1, y2 - y1)
-                                
-                                # Visual feedback for pinch
-                                h, w, c = frame.shape
-                                cx, cy = int(x1 * w), int(y1 * h)
-                                cv2.putText(frame, f"Dist: {distance:.3f}", (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-    
-                                if distance < 0.05: # Pinch Threshold
-                                    if not already_clicked:
-                                        try:
-                                            pyautogui.click()
-                                        except Exception:
-                                            pass
-                                        already_clicked = True
-                                        cv2.putText(frame, "CLICK!", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                                else:
-                                    already_clicked = False
-                            # Pinch Detection (Thumb 4, Index 8)
-                            x1, y1 = click_hand[4].x, click_hand[4].y
-                            x2, y2 = click_hand[8].x, click_hand[8].y
-                            distance = math.hypot(x2 - x1, y2 - y1)
-                            
-                            # Visual feedback for pinch
                             h, w, c = frame.shape
-                            cx, cy = int(x1 * w), int(y1 * h)
-                            cv2.putText(frame, f"Dist: {distance:.3f}", (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+                            texts = mouse_ctrl.process_click_and_scroll(click_hand, w, h, model, gesture_params, normalize_landmarks)
+                            for txt, pos, color in texts:
+                                cv2.putText(frame, txt, pos, cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
-                            if distance < 0.05: # Pinch Threshold
-                                if not already_clicked:
-                                    pyautogui.click()
-                                    already_clicked = True
-                                    cv2.putText(frame, "CLICK!", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                            else:
-                                already_clicked = False
-
-                    # --- GESTURE MODE LOGIC ---
-                    else: 
+                    else:
                         gesture_text = "Idle"
                         color = (0, 0, 255)
                         progress_bar_val = 0
 
                         if detection_result.hand_landmarks:
                             hand_landmarks = detection_result.hand_landmarks[0]
+                            gesture_text, color, progress_bar_val = gesture_processor.process_gesture(hand_landmarks, model, normalize_landmarks)
                             
-                            # Inference
-                            input_data = np.array([normalize_landmarks(hand_landmarks)])
-                            # Check model
-                            if model:
-                                prediction = model(input_data, training=False).numpy()
-                                class_id = np.argmax(prediction)
-                                threshold = gesture_params.get_confidence_threshold(class_id)
-                                
-                                # Ignore "Scroll Mode" entirely in standard Gesture mode
-                                if "Scroll Mode" in CLASSES and class_id == CLASSES.index("Scroll Mode"):
-                                    class_id = -1
-                                    confidence = 0.0
-                                
-                                if confidence > threshold:
-                                    gesture_buffer.append(class_id)
-                                else:
-                                    gesture_buffer.append(-1)
-                                
-                                if len(gesture_buffer) == SMOOTHING_BUFFER:
-                                    detected_state = max(set(gesture_buffer), key=gesture_buffer.count)
-                                    
-                                    # State Machine
-                                    if detected_state != -1 and detected_state != gesture_params.IDLE_ID:
-                                        if detected_state == current_gesture_state:
-                                            elapsed = time.time() - gesture_hold_start_time
-                                            duration = gesture_params.get_hold_duration(detected_state)
-                                            
-                                            if elapsed >= duration:
-                                                is_active = True
-                                                progress_bar_val = 1.0
-                                            else:
-                                                is_active = False
-                                                if duration > 0:
-                                                    progress_bar_val = elapsed / duration
-                                                    gesture_text = f"Holding... {duration - elapsed:.1f}s"
-                                                else:
-                                                    progress_bar_val = 1.0
-                                                    gesture_text = "Active"
-                                                color = (0, 165, 255)
-                                        else:
-                                            current_gesture_state = detected_state
-                                            gesture_hold_start_time = time.time()
-                                            is_active = False
-                                            prev_y = hand_landmarks[8].y # Reset reference
-                                            gesture_text = "New Gesture Detected"
-                                    else:
-                                        current_gesture_state = None
-                                        is_active = False
-                                        prev_y = None
-                                        gesture_text = "Idle"
-
-                                    # Execution
-                                    if is_active:
-                                        color = (0, 255, 0)
-                                        
-                                        # Volume
-                                        if current_gesture_state == gesture_params.VOL_ID:
-                                            current_y = hand_landmarks[8].y
-                                            if prev_y is not None:
-                                                delta_y = current_y - prev_y
-                                                
-                                                # Use Helper for Logic
-                                                steps, speed_text = gesture_params.get_volume_steps(delta_y)
-                                                
-                                                if steps > 0:
-                                                    # Y increases down
-                                                    if delta_y < 0: # Up
-                                                        sys_ctrl.change_volume(1, steps)
-                                                        gesture_text = "Active: Volume Up"
-                                                    else:
-                                                        sys_ctrl.change_volume(-1, steps)
-                                                        gesture_text = "Active: Volume Down"
-                                                else:
-                                                    gesture_text = "Active: Volume Mode"
-                                            
-                                            prev_y = current_y
-
-                                        # Brightness
-                                        elif current_gesture_state == gesture_params.B_UP_ID:
-                                            sys_ctrl.change_brightness(1)
-                                            gesture_text = "Active: Brightness Up"
-                                        
-                                        elif current_gesture_state == gesture_params.B_DOWN_ID:
-                                            sys_ctrl.change_brightness(-1)
-                                            gesture_text = "Active: Brightness Down"
-
-                                        # Desktop
-                                        elif current_gesture_state == gesture_params.DESK_ID:
-                                            if sys_ctrl.toggle_desktop():
-                                                gesture_text = "Active: Desktop Toggle"
-                                                is_active = False
-                                                current_gesture_state = None
-                                                
-                                        # Pause Track
-                                        elif getattr(gesture_params, 'PAUSE_ID', -999) != -999 and current_gesture_state == gesture_params.PAUSE_ID:
-                                            if sys_ctrl.toggle_media():
-                                                cv2.putText(frame, "PLAY / PAUSE", (int(w/2)-150, int(h/2)), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 5)
-                                                gesture_text = "Active: Play/Pause"
-                                                # Reset state completely after toggle
-                                                is_active = False
-                                                current_gesture_state = None
-                                            else:
-                                                gesture_text = "Active: Media Cooldown"
-                                        
-                                        else:
-                                            gesture_name = CLASSES[current_gesture_state]
-                                            gesture_text = f"Active: {gesture_name}"
-                                            # No system action for new/custom gestures by default
-                                            is_active = False
-                                
-                            else:
-                                gesture_text = "Model Not Loaded"
-
-                        else:
-                            current_gesture_state = None
-                            is_active = False
-
-                        # Visual Feedback
-                        cv2.putText(frame, f"{gesture_text}", (10, 50), 
+                        cv2.putText(frame, f"{gesture_text}", (10, 50),
                                    cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
-                        
-                        if not is_active and current_gesture_state is not None:
+
+                        if progress_bar_val > 0 and progress_bar_val < 1.0:
                              bar_w = 200
                              cv2.rectangle(frame, (10, 60), (10 + int(bar_w * progress_bar_val), 80), color, -1)
                              cv2.rectangle(frame, (10, 60), (10 + bar_w, 80), (255, 255, 255), 2)
 
-                    # Common Show
                     if not HEADLESS:
                         window_name = 'Gesture Control'
                         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-                        
+
                         if ALWAYS_ON_TOP:
                             cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
 
@@ -525,22 +329,21 @@ def main():
                             should_exit = True
                             break
                     else:
-                        # Headless Mode: Sleep to prevent 100% CPU usage
-                        time.sleep(0.03) 
-                
-                # Inner loop broke (Switch or Exit)
+
+                        time.sleep(0.03)
+
                 if should_exit:
                     break
                 if should_break:
-                    continue # Re-init
+                    continue
 
-            # Outer loop continues (Re-init)
             if should_exit:
                 break
-            
-    finally:       
+
+    finally:
         cap.stop()
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
+

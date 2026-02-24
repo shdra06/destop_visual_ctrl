@@ -14,7 +14,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Modern UI
 st.markdown("""
 <style>
     /* Reduce wasted space at the top */
@@ -42,7 +41,7 @@ st.markdown("""
         font-weight: 500;
         letter-spacing: 0.5px;
     }
-    
+
     /* Make the pipeline cards "pop" and feel alive */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease, border-color 0.3s ease !important;
@@ -76,7 +75,7 @@ st.markdown("""
     .stButton>button:active {
         transform: translateY(0px) scale(0.98);
     }
-    
+
     /* Primary buttons get a modern glow */
     .stButton>button[kind="primary"] {
         background: linear-gradient(135deg, #FF4B2B 0%, #FF416C 100%);
@@ -91,7 +90,7 @@ st.markdown("""
     /* Status indicators */
     .status-online { color: #00E676; font-weight: 800; padding: 6px 12px; background: rgba(0,230,118,0.15); border-radius: 6px; letter-spacing: 1px; display: inline-block; margin-top: 5px; }
     .status-offline { color: #FF1744; font-weight: 800; padding: 6px 12px; background: rgba(255,23,68,0.15); border-radius: 6px; letter-spacing: 1px; display: inline-block; margin-top: 5px; }
-    
+
     /* Sidebar styling & refinement */
     section[data-testid="stSidebar"] {
         background-color: rgba(18, 18, 18, 0.95);
@@ -107,7 +106,7 @@ st.markdown("""
         padding-bottom: 5px;
         display: inline-block;
     }
-    
+
     hr {
         border-color: rgba(255, 255, 255, 0.05);
     }
@@ -137,7 +136,7 @@ def save_config(data):
 def run_process(script_name, capture_output=False):
     """Runs a script in a subprocess and streams output."""
     cmd = [PYTHON_EXE, script_name]
-    
+
     if not os.path.exists(script_name):
         st.error(f"File not found: {script_name}")
         return
@@ -154,24 +153,32 @@ def run_process(script_name, capture_output=False):
 
     return subprocess.Popen(cmd, **kwargs)
 
-# --- SIDEBAR CONFIGURATION ---
 with st.sidebar:
     st.markdown("## ⚙️ Control Center")
     st.markdown("---")
-    
+
     config = load_config()
     gestures = config.get("gestures", [])
-    
+
     with st.expander("🎯 Gesture Mapping", expanded=True):
         st.caption("Current active gestures:")
         for i, g in enumerate(gestures):
             st.markdown(f"**{i}**: `{g}`")
-            
+
         st.divider()
         new_gesture = st.text_input("Register New Gesture", placeholder="e.g., Swipe_Left")
         if st.button("➕ Add Gesture", use_container_width=True):
             if new_gesture and new_gesture not in gestures:
-                gestures.append(new_gesture)
+                replaced = False
+                for idx, g in enumerate(gestures):
+                    if g.startswith("Deleted_"):
+                        gestures[idx] = new_gesture
+                        replaced = True
+                        break
+
+                if not replaced:
+                    gestures.append(new_gesture)
+
                 config["gestures"] = gestures
                 save_config(config)
                 st.success(f"Added {new_gesture}!")
@@ -180,17 +187,10 @@ with st.sidebar:
             elif new_gesture in gestures:
                 st.warning("Gesture already exists.")
 
-        if st.button("🔄 Reset Defaults", use_container_width=True):
-            config["gestures"] = ["Volume", "Bright_Up", "Bright_Down", "Show_Desktop"]
-            save_config(config)
-            st.success("Reset to defaults.")
-            time.sleep(1)
-            st.rerun()
-
     with st.expander("🖱️ Mouse & Input Mode", expanded=False):
         mouse_mode = config.get("mouse_mode", False)
         new_mouse_mode = st.toggle("Enable Air Mouse Mode", value=mouse_mode, help="2-Hand Control: Left=Cursor, Right=Click")
-        
+
         if new_mouse_mode != mouse_mode:
             config["mouse_mode"] = new_mouse_mode
             save_config(config)
@@ -201,10 +201,10 @@ with st.sidebar:
     with st.expander("🖥️ Window Settings", expanded=False):
         headless = config.get("headless", False)
         always_on_top = config.get("always_on_top", True)
-        
+
         new_headless = st.toggle("Headless Mode", value=headless, help="Hides camera view, runs in background.")
         new_always_on_top = st.toggle("Always On Top", value=always_on_top, help="Keeps camera window above others.")
-        
+
         if new_headless != headless or new_always_on_top != always_on_top:
             config["headless"] = new_headless
             config["always_on_top"] = new_always_on_top
@@ -219,8 +219,6 @@ with st.sidebar:
         time.sleep(1)
         os.execv(sys.executable, [sys.executable, "-m", "streamlit", "run", "app.py"])
 
-
-# --- MAIN PIPELINE LAYOUT (2x2 Grid) ---
 st.markdown("### 🚀 Engine Pipeline")
 col1, col2 = st.columns(2)
 
@@ -275,10 +273,10 @@ if 'system_pid' not in st.session_state:
 with col4:
     with st.container(border=True):
         st.subheader("⚡ 4. Live Control")
-        
+
         pid = st.session_state.get('system_pid', None)
         is_running = False
-        
+
         if pid:
             if psutil.pid_exists(pid):
                 try:
@@ -289,22 +287,22 @@ with col4:
                     is_running = False
             else:
                 is_running = False
-                
+
         if not is_running and pid is not None:
             st.session_state['system_pid'] = None
             st.warning(f"Process {pid} ended unexpectedly.")
-            
+
         if is_running:
             st.markdown("Status: <span class='status-online'>🟢 ONLINE</span>", unsafe_allow_html=True)
             st.markdown(f"*Engine running in background (PID: {pid})*")
-            
+
             c4_1, c4_2 = st.columns(2)
             with c4_1:
                 if st.button("⏹ Stop System"):
                     try:
                         p = psutil.Process(pid)
-                        p.kill() 
-                        p.wait(timeout=3) 
+                        p.kill()
+                        p.wait(timeout=3)
                         st.session_state['system_pid'] = None
                         st.rerun()
                     except (psutil.NoSuchProcess, Exception) as e:
@@ -335,7 +333,7 @@ with col4:
                     proc = run_process("main.py", capture_output=False)
                     if proc:
                         st.session_state['system_pid'] = proc.pid
-                        time.sleep(1) 
+                        time.sleep(1)
                         st.rerun()
                     else:
                         st.error("Failed to start process.")
@@ -347,8 +345,7 @@ st.divider()
 with st.expander("📖 Getting Started & Best Practices", expanded=True):
     st.markdown("### 🎯 Interactive Gesture Library")
     st.markdown("Edit, add, or delete gesture details below. Click **Save** when done.")
-    
-    # Default library if none in config
+
     default_lib = [
         {"Gesture": "Volume", "Shape": "👌 Pinch", "Action": "Adjusts Volume", "Motion": "Move UP/DOWN"},
         {"Gesture": "Bright_Up", "Shape": "👍 Thumb Up", "Action": "Increases Brightness", "Motion": "Hold"},
@@ -356,19 +353,18 @@ with st.expander("📖 Getting Started & Best Practices", expanded=True):
         {"Gesture": "Show_Desktop", "Shape": "🤘 Rock", "Action": "Minimizes windows", "Motion": "Hold"},
         {"Gesture": "Idle", "Shape": "🖐️ Relaxed", "Action": "None", "Motion": "None"},
         {"Gesture": "Victory", "Shape": "✌️ Peace", "Action": "Toggle Mouse/Gesture", "Motion": "Hold"},
-        {"Gesture": "pause track", "Shape": "🤏 Open Pinch", "Action": "Play/Pause Media", "Motion": "Hold 0.5s"},
-        {"Gesture": "Scroll Mode", "Shape": "☝️ Thumb Extended", "Action": "Scroll Page (Mouse Mode)", "Motion": "Move Index"}
+        {"Gesture": "pause track", "Shape": "🤏 Open Pinch", "Action": "Play/Pause Media", "Motion": "Hold 0.5s"}
     ]
-    
+
     library_data = config.get("gesture_library", default_lib)
-    
+
     edited_data = st.data_editor(
-        library_data, 
+        library_data,
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True
     )
-    
+
     if st.button("💾 Save Library Changes", key="save_lib"):
         config["gesture_library"] = edited_data
         save_config(config)
@@ -381,3 +377,4 @@ with st.expander("📖 Getting Started & Best Practices", expanded=True):
     3. **Testing**: Use `Run Test Viewer` to ensure your gestures are recognized efficiently without drift.
     4. **Execution**: Click `Start Engine` to begin controlling your PC dynamically!
     """)
+
