@@ -3,11 +3,15 @@
         "Volume",
         "Bright_Up",
         "Bright_Down",
-        "Show_Desktop"
+        "Show_Desktop",
+        "Idle",
+        "Victory",
+        "Deleted_6",
+        "pause track",
+        "Scroll Mode"
     ],
     "mouse_mode": true,
     "headless": false,
     "always_on_top": true,
-    "classes": [],
-    "gesture_library": []
+    "classes": []
 }

@@ -219,7 +219,7 @@ with st.sidebar:
         time.sleep(1)
         os.execv(sys.executable, [sys.executable, "-m", "streamlit", "run", "app.py"])
 
-st.markdown("### 🚀 Engine Pipeline")
+st.markdown("###  Engine Pipeline")
 col1, col2 = st.columns(2)
 
 with col1:
@@ -232,7 +232,7 @@ with col1:
 
 with col2:
     with st.container(border=True):
-        st.subheader("🧠 2. Model Training")
+        st.subheader(" 2. Model Training")
         st.markdown("Train the neural network on your collected data.")
         if st.button("Train AI Model", key="btn_train"):
             with st.status("Training in progress...", expanded=True) as status:
@@ -250,7 +250,7 @@ with col2:
                     if line:
                         output_container.code(line.strip(), language="text")
                 if process.returncode == 0:
-                    status.update(label="Training Complete! ✅", state="complete", expanded=False)
+                    status.update(label="Training Complete! ", state="complete", expanded=False)
                     st.success("Model saved successfully as: `gesture_model.h5`")
                 else:
                     status.update(label="Training Failed ❌", state="error")
@@ -261,7 +261,7 @@ col3, col4 = st.columns(2)
 
 with col3:
     with st.container(border=True):
-        st.subheader("🧪 3. System Testing")
+        st.subheader(" 3. System Testing")
         st.markdown("Debug and verify gesture recognition accuracy.")
         if st.button("Run Test Viewer", key="btn_test"):
              st.toast("Launched test viewer in background terminal.")
@@ -342,8 +342,8 @@ with col4:
 
 st.divider()
 
-with st.expander("📖 Getting Started & Best Practices", expanded=True):
-    st.markdown("### 🎯 Interactive Gesture Library")
+with st.expander("Getting Started & Best Practices", expanded=True):
+    st.markdown("###  Interactive Gesture Library")
     st.markdown("Edit, add, or delete gesture details below. Click **Save** when done.")
 
     default_lib = [
@@ -365,13 +365,13 @@ with st.expander("📖 Getting Started & Best Practices", expanded=True):
         hide_index=True
     )
 
-    if st.button("💾 Save Library Changes", key="save_lib"):
+    if st.button(" Save Library Changes", key="save_lib"):
         config["gesture_library"] = edited_data
         save_config(config)
         st.success("Library updated successfully!")
 
     st.markdown("""
-    ### 🛠️ Step-by-Step Guide
+    ###  Step-by-Step Guide
     1. **Data Collection**: Stand in a well-lit area. Click `Start Data Collector` and follow the prompt. Capture at least ~1000 frames per gesture at various angles.
     2. **Training**: Once data is collected, hit `Train AI Model`. Wait for the success message.
     3. **Testing**: Use `Run Test Viewer` to ensure your gestures are recognized efficiently without drift.
